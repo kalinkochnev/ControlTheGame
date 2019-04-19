@@ -144,9 +144,9 @@ class game():
 
     def isGameOpen(self):
         while True:
-            for proc in psutil.process_iter():
-                if proc.name() == self.gameName:
-                    self.gameOpen = 1
+            for proc in psutil.process_iter(attrs=['pid']):
+                if proc.name() == "Discord":
+                    print(proc.info)
             #get pids of program
             
             time.sleep(5)    
