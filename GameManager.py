@@ -54,27 +54,33 @@ class GameObject():
     def get_name(self):
         return self.gameName
 
-"""
-class GUI():
-    def Interface(self):
-        GameManager = tkinter.Tk()
-        time_entry = tkinter.Entry(GameManager).grid(row=0)
 
-        def getInput():
+class GUI():
+    def show(self):
+        GameManager = tkinter.Tk()
+        time_entry = tkinter.Entry(GameManager)
+        time_entry.grid(row=0)
+
+        def addTime():
             user_input = time_entry.get()
             if re.search("\d+$", user_input) != None:
-                self.sendCommand()
+                self.sendCommand("add time", int(user_input))
+
+        def killAll():
+            for game in GamesTracking:
+                self.sendCommand("stop",game.get_pids())
 
         #TODO 
-        close_games = tkinter.Button(GameManager, text="Close all", width=50, command=getInput).grid(row=1)
-        add_time = tkinter.Button(GameManager, text="Add time", width=50, command=getInput).grid(row=2)
+        close_games = tkinter.Button(GameManager, text="Close all", width=50, command=killAll).grid(row=1)
+        add_time = tkinter.Button(GameManager, text="Add time", width=50, command=addTime).grid(row=2)
+
         
         GameManager.mainloop()
     
     def sendCommand(self, name, info):
-        #commandQueue.put({name, info})
-        print("command sent")
-"""
+        commandQueue.put({name:info})
+        print("command '%s' was sent with time %s"%(name, info))
+
 
 def command_interface():
     global timeLimit
@@ -115,14 +121,8 @@ def command_executor():
         print(timeLimit)
 
 
-
-if __name__ == "__main__":
-    #TODO terminal only working with first command inputted
-    #create a command_interface and a command_executor thread
-    interfaceThread = threading.Thread(target=command_interface)
-    interfaceThread.start()
-
-    #create array of objects for each game user wants to track
+def runTrackingLoop():
+        #create array of objects for each game user wants to track
     for name in namesOfGames:
         GamesTracking.append(GameObject(name))
         #gets initial PID states for object
@@ -153,3 +153,16 @@ if __name__ == "__main__":
         totalTime += timePause
         game.inc_game_runtime(timePause)
         print("Currently running games %s" % [game.get_name() for game in runningGames])
+
+if __name__ == "__main__":
+    #TODO terminal only working with first command inputted
+    #create a command_interface and a command_executor thread
+    interfaceThread = threading.Thread(target=command_interface)
+    interfaceThread.start()
+
+    trackingLoopThread = threading.Thread(target=runTrackingLoop)
+    trackingLoopThread.start()
+
+    g = GUI()
+    g.show()
+    
