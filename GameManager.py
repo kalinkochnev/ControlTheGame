@@ -56,13 +56,16 @@ class GameObject():
 
 
 class GUI():
-    def show(self):
-        GameManager = tkinter.Tk()
-        time_entry = tkinter.Entry(GameManager)
-        time_entry.grid(row=0)
+    def __init__(self):
+        self.GameManager = tkinter.Tk()
+        tkinter.Label(self.GameManager,text="Time to Add:").grid(row=0, column=0)
+        self.time_entry = tkinter.Entry(self.GameManager)
+        self.time_entry.grid(row=0, column=1)
+
+
 
         def addTime():
-            user_input = time_entry.get()
+            user_input = self.time_entry.get()
             if re.search("\d+$", user_input) != None:
                 self.sendCommand("add time", int(user_input))
 
@@ -70,12 +73,34 @@ class GUI():
             for game in GamesTracking:
                 self.sendCommand("stop",game.get_pids())
 
-        #TODO 
-        close_games = tkinter.Button(GameManager, text="Close all", width=50, command=killAll).grid(row=1)
-        add_time = tkinter.Button(GameManager, text="Add time", width=50, command=addTime).grid(row=2)
 
+        self.add_time = tkinter.Button(self.GameManager, text="Add time", width=50, command=addTime)
+        self.add_time.grid(row=1, columnspan=2)
         
-        GameManager.mainloop()
+        self.close_games = tkinter.Button(self.GameManager, text="Close all", width=50, command=killAll)
+        self.close_games.grid(row=2,columnspan=2)
+        
+
+        tkinter.Label(self.GameManager,text="").grid(row=3)
+        tkinter.Label(self.GameManager,text="Currently Running Games:").grid(row=4,column=0)
+        self.games_list = tkinter.Message(self.GameManager, width=100,  text="")
+        self.games_list.grid(row=5,columnspan=2)
+
+        tkinter.Label(self.GameManager,text="").grid(row=6,columnspan=2)
+        tkinter.Label(self.GameManager,text="Total Running Time").grid(row=7,column=0)
+
+        self.running_time = tkinter.Label(self.GameManager,text="blag")
+        self.running_time.grid(row=7,column=1)
+
+    def setGameNames(self,games):
+        gameNames = "\n".join(games)
+        self.games_list['text'] = gameNames
+
+    def setRunningTime(self,time):
+        self.running_time['text'] = time 
+
+    def show(self):    
+        self.GameManager.mainloop()
     
     def sendCommand(self, name, info):
         commandQueue.put({name:info})
@@ -121,7 +146,7 @@ def command_executor():
         print(timeLimit)
 
 
-def runTrackingLoop():
+def runTrackingLoop(gui):
         #create array of objects for each game user wants to track
     for name in namesOfGames:
         GamesTracking.append(GameObject(name))
@@ -152,7 +177,10 @@ def runTrackingLoop():
                     runningGames.remove(game)
         totalTime += timePause
         game.inc_game_runtime(timePause)
-        print("Currently running games %s" % [game.get_name() for game in runningGames])
+        gameNames = [game.get_name() for game in runningGames]
+        print("Currently running games %s" % gameNames)
+        g.setGameNames(gameNames)
+        g.setRunningTime(str(totalTime))
 
 if __name__ == "__main__":
     #TODO terminal only working with first command inputted
@@ -160,9 +188,11 @@ if __name__ == "__main__":
     interfaceThread = threading.Thread(target=command_interface)
     interfaceThread.start()
 
-    trackingLoopThread = threading.Thread(target=runTrackingLoop)
+    g = GUI()
+
+    trackingLoopThread = threading.Thread(target=runTrackingLoop, args=(g,))
     trackingLoopThread.start()
 
-    g = GUI()
+    
     g.show()
     
