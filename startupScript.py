@@ -29,7 +29,8 @@ class SettingsManager():
             if self.fileSetup(self.settingsDir) == True:
                 #checks if the settings file is present, if not it adds the settings for it
                 if os.path.isdir(os.path.join(directory, "settings.json")) == False:
-                    print("It appears that your settings file is not present, please follow the next steps to configure it.")
+                    print("It appears that your settings file is not present, " 
+                          "please follow the next steps to configure it.")
                     print("Please be very careful with what you enter because the settings will be EXTREMELY DIFFICULT to change")
                     
                     #sets tracking mode
@@ -43,7 +44,8 @@ class SettingsManager():
                     self.gamesToTrackSettings(gameList)
 
                     #sets up pausing settings
-                    print("Please enter the number of pauses you would like to be allotted followed by the time (in minutes) for each pause seperated by spaces \n     ex: 3 5")
+                    print("Please enter the number of pauses you would like to be allotted followed by the time " 
+                          "(in minutes) for each pause separated by spaces \n     ex: 3 5")
                     print("If you would like no pauses, please input 0 0")
                     while True:
                         pauseInput = str(input()).split(" ")
