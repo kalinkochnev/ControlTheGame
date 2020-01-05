@@ -11,9 +11,10 @@ tracker_queue = queue.Queue()
 
 class Settings:
 
-    def __init__(self, max_extra_time, *game_objs):
+    def __init__(self, max_extra_time, loop_time, *game_objs):
         self.tracking_games = game_objs
         self.extra_time = max_extra_time
+        self.loop_time = loop_time
 
     def game_lower_names(self):
         return [game.name for game in self.tracking_games]
@@ -39,7 +40,6 @@ class GameObject:
                 psutil.Process(pid).kill()
             except psutil.NoSuchProcess:
                 print(f"Tried to kill process {pid} that did not exist")
-            #self.PIDS.remove(pid)
         print(f"Killed {self.name}")
 
     def __eq__(self, other):
@@ -60,7 +60,7 @@ class GameObject:
         self.PIDS = new_state.PIDS
 
     def __str__(self):
-        return f"Game {self.PIDS} --- {self.PIDS}"
+        return f"{self.name} --- {self.PIDS}"
 
 
 class DataManager:
@@ -81,7 +81,6 @@ class CurrentState(Settings):
 
     def remove_from_running(self, game):
         index = self.get_game_index_running(game)
-        print(f"Killing calc at index: {index}")
         del self.currently_running[index]
 
     def get_game_from_running(self, other_game_obj):
@@ -123,18 +122,17 @@ class CurrentState(Settings):
 
             if old_state is not None:
                 if self.has_any_diff(old_state, new_state) is False:
+                    if new_state.is_running is False:
+                        self.game_end(old_state)
                     continue
 
                 if self.has_run_diff(old_state, new_state):
+                    print(f"Has a run state diff {old_state.is_running} and {new_state.is_running}")
+
                     if old_state.is_running:  # if old status is running, new one isn't apply game end changes
+                        print("Ending game")
                         self.game_end(old_state)
-                    else:  # if old status is not running, new one is, apply game start changes
-                        self.game_start(new_state)
-                elif self.has_pid_diff(old_state, new_state):
-                    if len(new_state.PIDS) == 0:
-                        self.remove_from_running(old_state)
-                    else:
-                        self.game_update(old_state, new_state)
+
             else:
                 if len(new_state.PIDS) > 0:
                     self.game_start(new_state)
@@ -153,13 +151,14 @@ class Tracker(threading.Thread):
 
     def __init__(self, SettingsClass):
         threading.Thread.__init__(self)
+        self.loop_time = SettingsClass.loop_time
         self.current_state = SettingsClass.tracking_games
 
     def run(self):
         print("Starting tracking thread!\n")
         while True:
             self.update_status()
-            time.sleep(10)
+            time.sleep(self.loop_time)
 
     def update_status(self):
         # Resets the PIDS for all the game objects to update them
@@ -177,13 +176,14 @@ class Tracker(threading.Thread):
                 if new_game.name.lower() in process_name:
                     self.current_state[index].PIDS.append(process.info['pid'])
 
-                    # TODO come up with better way to assign values to item in list
-                    # if num pids is 0, is not running
-                    if len(new_game.PIDS) == 0:
-                        self.current_state[index].is_running = False
-                        print("%s is closed" % new_game.name)
-                    elif new_game.is_running is False:
-                        self.current_state[index].is_running = True
+        # TODO come up with better way to assign values to item in list
+        for index, game in enumerate(self.current_state):
+            # if num pids is 0, is not running
+            if len(game.PIDS) == 0:
+                game.is_running = False
+                print("%s is closed" % game.name)
+            else:
+                game.is_running = True
 
         """for game in self.current_state:
             print(f"{game.name} has been found with pids: {game.PIDS}")"""
@@ -208,8 +208,8 @@ class GameManager:
     blocked_games = []
 
     def run(self, state):
-        if not self.update_block(state):
-            self.enforce_block(state)
+        self.update_block(state)
+        self.enforce_block(state)
 
     @classmethod
     def kill_game(cls, game):
@@ -232,27 +232,32 @@ class GameManager:
         return True
 
     def enforce_block(self, state):
+        print(self.blocked_games)
+
         for game in state.currently_running:
             if game.name in self.blocked_game_names():
                 self.kill_game(game)
-                print("Resistance is futile!")
+                print("DeTecTed GamE iN bLoCK")
 
 
 if __name__ == '__main__':
     calculator = GameObject.min_init("Calculator", 5)
-    chrome = GameObject.min_init("chrome", 500)
-    settings = Settings(1, calculator, chrome)
+    chrome = GameObject.min_init("Chrome", 5)
+    discord = GameObject.min_init("Discord", 5)
+
+    settings = Settings(1, 5, calculator, chrome, discord)
 
     tracker = Tracker(settings)
-    tracker.start()
-
     current_state = CurrentState(settings)
     manager = GameManager()
 
     print("Starting...")
+    tracker.start()
     while True:
-        current_state.update_running()
-        print(current_state.currently_running)
-        manager.run(current_state)
-        time.sleep(3)
+        now = datetime.now().strftime("%c")
 
+        print(f"------ {now} ------")
+        current_state.update_running()
+        manager.run(current_state)
+        time.sleep(settings.loop_time)
+        print("\n")
