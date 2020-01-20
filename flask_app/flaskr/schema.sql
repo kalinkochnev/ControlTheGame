@@ -1,6 +1,6 @@
-CREATE TABLE [IF NOT EXISTS] game_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT;
-    start_time TEXT NOT NULL;
-    end_time TEXT NOT NULL;
-    game_name TEXT NOT NULL;
+CREATE TABLE game_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_name TEXT NOT NULL,
+    start_time INTEGER NOT NULL,
+    end_time INTEGER
 );

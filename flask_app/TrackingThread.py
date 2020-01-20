@@ -3,15 +3,16 @@ import threading
 from datetime import datetime
 import time
 import psutil
+import copy
+from .flaskr import database
 
-from Exceptions import GamesDontMatch
 
 tracker_queue = queue.Queue()
 
 
 class Settings:
 
-    def __init__(self, max_extra_time, loop_time, *game_objs):
+    def __init__(self, max_extra_time, loop_time, game_objs):
         self.tracking_games = game_objs
         self.extra_time = max_extra_time
         self.loop_time = loop_time
@@ -38,6 +39,7 @@ class GameObject:
         for pid in self.PIDS:
             try:
                 psutil.Process(pid).kill()
+                self.PIDS.pop(pid)
             except psutil.NoSuchProcess:
                 print(f"Tried to kill process {pid} that did not exist")
         print(f"Killed {self.name}")
@@ -54,13 +56,24 @@ class GameObject:
         self.end_time = time.time()
 
     def update(self, new_state):
-        self.start_time = new_state.start_time
-        self.end_time = new_state.end_now
-        self.max_time = new_state.max_time
-        self.PIDS = new_state.PIDS
+        if self == new_state:
+            self.start_time = new_state.start_time
+            self.end_time = new_state.end_time
+            self.max_time = new_state.max_time
+            self.PIDS = new_state.PIDS
 
     def __str__(self):
         return f"{self.name} --- {self.PIDS}"
+
+    def deep_equal(self, other_obj):
+        pids_equal = other_obj.PIDS == self.PIDS
+        name_equal = other_obj.name == self.name
+        is_running_equal = other_obj.is_running == self.is_running
+        start_time_equal = other_obj.start_time == self.start_time
+        end_time_equal = other_obj.end_time == self.end_time
+        max_time_equal = other_obj.max_time == self.max_time
+
+        return pids_equal and name_equal and is_running_equal and start_time_equal and end_time_equal and max_time_equal
 
 
 class DataManager:
@@ -69,12 +82,18 @@ class DataManager:
     def log(cls, game_obj):
         pass
 
+    def store_obj(self, game_obj):
+        db = database.get_db()
+        query = f"INSERT INTO game_log ({game_obj.name}, {game_obj.start_time})"
+
 
 class CurrentState(Settings):
-
     def __init__(self, SettingsClass):
         super().__init__(SettingsClass.extra_time, *SettingsClass.tracking_games)
         self.currently_running = []
+
+    def get_obj(self):
+        return self
 
     def add_to_running(self, game):
         self.currently_running.append(game)
@@ -87,11 +106,6 @@ class CurrentState(Settings):
         for game in self.currently_running:
             if game == other_game_obj:
                 return game
-        return None
-
-    def get_game_index_running(self, game_obj):
-        if game_obj in self.currently_running:
-            return self.currently_running.index(game_obj)
         return None
 
     def get_game_index_running(self, game_obj):
@@ -114,7 +128,6 @@ class CurrentState(Settings):
         index = self.currently_running.index(old_status)
         self.currently_running[index].update(new_status)
 
-    # TODO find out why old state gets cleared when it's deleted, probably something to do with get game index only doing it on currently running
     def update_running(self):
         while tracker_queue.empty() is False:
             new_state = tracker_queue.get()
@@ -148,6 +161,7 @@ class CurrentState(Settings):
 
 
 class Tracker(threading.Thread):
+    daemon = True
 
     def __init__(self, SettingsClass):
         threading.Thread.__init__(self)
@@ -171,13 +185,12 @@ class Tracker(threading.Thread):
         for process in psutil.process_iter(attrs=['name', 'pid']):
             process_name = process.info['name'].lower()
 
-            for index, new_game in enumerate(self.current_state):
+            for new_game in self.current_state:
                 # if processName contains game_name
                 if new_game.name.lower() in process_name:
-                    self.current_state[index].PIDS.append(process.info['pid'])
+                    new_game.PIDS.append(process.info['pid'])
 
-        # TODO come up with better way to assign values to item in list
-        for index, game in enumerate(self.current_state):
+        for game in self.current_state:
             # if num pids is 0, is not running
             if len(game.PIDS) == 0:
                 game.is_running = False
@@ -190,7 +203,7 @@ class Tracker(threading.Thread):
 
     def add_to_tracker_q(self):
         for game in self.current_state:
-            tracker_queue.put(game)
+            tracker_queue.put(copy.deepcopy(game))
 
     def reset_pids(self):
         if self.current_state:
@@ -232,20 +245,18 @@ class GameManager:
         return True
 
     def enforce_block(self, state):
-        print(self.blocked_games)
-
         for game in state.currently_running:
             if game.name in self.blocked_game_names():
                 self.kill_game(game)
                 print("DeTecTed GamE iN bLoCK")
 
 
-if __name__ == '__main__':
+def start_tracking():
     calculator = GameObject.min_init("Calculator", 5)
-    chrome = GameObject.min_init("Chrome", 5)
+    # chrome = GameObject.min_init("Chrome", 5)
     discord = GameObject.min_init("Discord", 5)
 
-    settings = Settings(1, 5, calculator, chrome, discord)
+    settings = Settings(1, 5, calculator, discord)
 
     tracker = Tracker(settings)
     current_state = CurrentState(settings)
@@ -254,10 +265,14 @@ if __name__ == '__main__':
     print("Starting...")
     tracker.start()
     while True:
+        print(current_state.currently_running)
         now = datetime.now().strftime("%c")
-
         print(f"------ {now} ------")
         current_state.update_running()
         manager.run(current_state)
         time.sleep(settings.loop_time)
         print("\n")
+
+
+if __name__ == '__main__':
+    start_tracking()
