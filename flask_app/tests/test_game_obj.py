@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime, timedelta
 from unittest.mock import patch
-
+import time
 import psutil
 
 from flask_app.TrackingThread import GameObject
@@ -74,6 +74,26 @@ class GameObjectTests(unittest.TestCase):
         with patch("flask_app.TrackingThread.psutil.Process.kill") as mocked_kill:
             mocked_kill.side_effect = psutil.NoSuchProcess(None)
             game1.kill()
+
+    def test_out_of_time(self):
+        start_time = time.time()
+
+        with patch("flask_app.TrackingThread.time.time") as mock_time:
+            mock_time.return_value = start_time + 100
+            game_obj = GameObject("game", start_time, None, 100)
+            self.assertFalse(game_obj.has_time())
+
+            mock_time.return_value = start_time + 100
+            game_obj = GameObject("game", start_time, None, 99)
+            self.assertFalse(game_obj.has_time())
+
+            mock_time.return_value = start_time + 100
+            game_obj = GameObject("game", start_time, None, 200)
+            self.assertTrue(game_obj.has_time())
+
+            mock_time.return_value = 100
+            game_obj = GameObject("game", start_time, None, 300)
+            self.assertTrue(game_obj.has_time())
 
 
 if __name__ == '__main__':

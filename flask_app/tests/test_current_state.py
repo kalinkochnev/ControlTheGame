@@ -11,7 +11,6 @@ class CurrentStateTests(unittest.TestCase):
         self.state = CurrentState(self.settings)
 
     def test_creation(self):
-        self.assertEquals([self.game_obj1, self.game_obj2], self.state.tracking_games)
         self.assertEqual([], self.state.currently_running)
 
     def test_add_to_running(self):
