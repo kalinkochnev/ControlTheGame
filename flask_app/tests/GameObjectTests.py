@@ -1,6 +1,6 @@
 import unittest
 from datetime import datetime, timedelta
-from unittest.mock import patch, call
+from unittest.mock import patch
 
 import psutil
 
@@ -50,7 +50,7 @@ class GameObjectTests(unittest.TestCase):
         obj2 = GameObject("game1", 10, 20, 5)
         obj1.update(obj2)
         self.assertEqual(obj1.name, "game1")
-        self.assertEqual(obj1.start_time, 10)
+        self.assertEqual(obj1.start_time, 0)
         self.assertEqual(obj1.end_time, 20)
         self.assertEqual(obj1.max_time, 5)
         self.assertEqual(obj1.PIDS, [])

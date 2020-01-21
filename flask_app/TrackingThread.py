@@ -6,7 +6,6 @@ import psutil
 import copy
 from .flaskr import database
 
-
 tracker_queue = queue.Queue()
 
 
@@ -57,7 +56,6 @@ class GameObject:
 
     def update(self, new_state):
         if self == new_state:
-            self.start_time = new_state.start_time
             self.end_time = new_state.end_time
             self.max_time = new_state.max_time
             self.PIDS = new_state.PIDS
@@ -87,46 +85,50 @@ class DataManager:
         query = f"INSERT INTO game_log ({game_obj.name}, {game_obj.start_time})"
 
 
-class CurrentState(Settings):
+class CurrentState:
     def __init__(self, SettingsClass):
-        super().__init__(SettingsClass.extra_time, *SettingsClass.tracking_games)
+        self.tracking_games = SettingsClass.tracking_games
         self.currently_running = []
 
-    def get_obj(self):
-        return self
-
     def add_to_running(self, game):
-        self.currently_running.append(game)
+        if game not in self.currently_running:
+            self.currently_running.append(game)
 
     def remove_from_running(self, game):
         index = self.get_game_index_running(game)
-        del self.currently_running[index]
+        if index is not None:
+            del self.currently_running[index]
 
     def get_game_from_running(self, other_game_obj):
-        for game in self.currently_running:
-            if game == other_game_obj:
-                return game
+        index = self.get_game_index_running(other_game_obj)
+        if index is not None:
+            return self.currently_running[index]
+        else:
+            return None
+
+    def get_game_index_running(self, other_game_obj):
+        if other_game_obj in self.currently_running:
+            return self.currently_running.index(other_game_obj)
         return None
 
-    def get_game_index_running(self, game_obj):
-        if game_obj in self.currently_running:
-            return self.currently_running.index(game_obj)
-        return None
-
-    def game_start(self, not_in_running):
-        self.add_to_running(not_in_running)
-        index = self.get_game_index_running(not_in_running)
+    def game_start(self, game):
+        self.add_to_running(game)
+        index = self.get_game_index_running(game)
         self.currently_running[index].start_now()
+        # TODO add storage capability
         DataManager.log(self.currently_running[index])
 
-    def game_end(self, game_in_running):
-        self.remove_from_running(game_in_running)
-        game_in_running.end_now()
-        DataManager.log(game_in_running)
+    def game_end(self, game):
+        self.remove_from_running(game)
+        game.end_now()
+        # TODO add storage capability
+        DataManager.log(game)
 
     def game_update(self, old_status, new_status):
-        index = self.currently_running.index(old_status)
-        self.currently_running[index].update(new_status)
+        if old_status.name != new_status.name:
+            raise ValueError("The games do not match!")
+
+        old_status.update(new_status)
 
     def update_running(self):
         while tracker_queue.empty() is False:
@@ -145,6 +147,9 @@ class CurrentState(Settings):
                     if old_state.is_running:  # if old status is running, new one isn't apply game end changes
                         print("Ending game")
                         self.game_end(old_state)
+
+                if self.has_pid_diff(old_state, new_state):
+                    old_state.update(new_state)
 
             else:
                 if len(new_state.PIDS) > 0:
@@ -198,7 +203,7 @@ class Tracker(threading.Thread):
             else:
                 game.is_running = True
 
-        """for game in self.current_state:
+        """for game in self.state:
             print(f"{game.name} has been found with pids: {game.PIDS}")"""
 
     def add_to_tracker_q(self):

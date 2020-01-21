@@ -34,8 +34,8 @@ def create_app(test_config=None):
 
     @app.route("/")
     def home():
-        if current_state is not None:
-            return str(current_state.currently_running)
+        if state is not None:
+            return str(state.currently_running)
         else:
             return str("No games running")"""
 
@@ -51,15 +51,15 @@ def start_tracking():
 
     tracker = cg.Tracker(settings)
     # TODO figure out how to get the current state and display it
-    global current_state
-    current_state = cg.CurrentState(settings)
+    global state
+    state = cg.CurrentState(settings)
     manager = cg.GameManager()
 
     print("Starting tracker...")
     tracker.start()
     while True:
-        current_state.update_running()
-        manager.run(current_state)
+        state.update_running()
+        manager.run(state)
 
         now = datetime.now().strftime("%c")
         print(f"------ {now} ------")
