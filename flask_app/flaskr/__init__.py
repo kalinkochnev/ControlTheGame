@@ -28,40 +28,4 @@ def create_app(test_config=None):
     from . import database as db
     db.init_app(app)
 
-    """# Checks if the game watcher is already running
-    if not werkzeug.serving.is_running_from_reloader():
-        start_tracking()
-
-    @app.route("/")
-    def home():
-        if state is not None:
-            return str(state.currently_running)
-        else:
-            return str("No games running")"""
-
     return app
-
-"""
-def start_tracking():
-    calculator = cg.GameObject.min_init("Calculator", 100)
-    # chrome = GameObject.min_init("Chrome", 5)
-    discord = cg.GameObject.min_init("Discord", 100)
-
-    settings = cg.Settings(1, 5, calculator, discord)
-
-    tracker = cg.Tracker(settings)
-    # TODO figure out how to get the current state and display it
-    global state
-    state = cg.CurrentState(settings)
-    manager = cg.GameManager()
-
-    print("Starting tracker...")
-    tracker.start()
-    while True:
-        state.update_running()
-        manager.run(state)
-
-        now = datetime.now().strftime("%c")
-        print(f"------ {now} ------")
-        time.sleep(settings.loop_time)
-        print("\n")"""

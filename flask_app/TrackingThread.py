@@ -78,14 +78,23 @@ class GameObject:
 
 
 class DataManager:
+    class StoreData:
+        def __enter__(self):
+            self.db = database.get_db()
+            return self.db
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            self.db.commit()
+            self.db.close()
 
     @classmethod
-    def log(cls, game_obj):
-        pass
+    def store_new(cls, game_obj):
+        with cls.StoreData() as db:
+            command = f"INSERT INTO game_log (game_name, start_time, end_time, max_time) VALUES({game_obj.name}, {game_obj.start_time}, {game_obj.end_time}, {game_obj.max_time})"
 
-    def store_obj(self, game_obj):
-        db = database.get_db()
-        query = f"INSERT INTO game_log ({game_obj.name}, {game_obj.start_time})"
+    # Store a game object from scratch
+    # Update a game object's end time
+    # Get a game object from the database
 
 
 class CurrentState:
@@ -119,13 +128,11 @@ class CurrentState:
         index = self.get_game_index_running(game)
         self.currently_running[index].start_now()
         # TODO add storage capability
-        DataManager.log(self.currently_running[index])
 
     def game_end(self, game):
         self.remove_from_running(game)
         game.end_now()
         # TODO add storage capability
-        DataManager.log(game)
 
     def game_update(self, old_status, new_status):
         if old_status.name != new_status.name:
