@@ -55,4 +55,4 @@ jobs:
           destination: test-reports
 
       - store_test_results:
-          path: test-results
+          path: .circleci/test-results
