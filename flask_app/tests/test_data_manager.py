@@ -18,7 +18,7 @@ class TestDataManager(unittest.TestCase):
         sql_script_loc = os.path.join(self.base_loc, "flask_app/flaskr/schema.sql")
 
         if os.path.isfile(self.db_loc) is False:
-            db_file = open(self.db_loc, "w")
+            db_file = open(self.db_loc, "w+")
             db_file.close()
 
         with open(sql_script_loc, "r") as script:
