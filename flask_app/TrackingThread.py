@@ -1,9 +1,10 @@
+import os
 import queue
+import sqlite3
 import threading
 import time
 import psutil
 import copy
-from .flaskr import database
 import time
 
 tracker_queue = queue.Queue()
@@ -15,9 +16,21 @@ class Settings:
         self.tracking_games = game_objs
         self.extra_time = max_extra_time
         self.loop_time = loop_time
+        self.db_loc = None
 
     def game_lower_names(self):
         return [game.name for game in self.tracking_games]
+
+    @classmethod
+    def get_base_loc(cls, dir_name):
+        cur_dir = os.getcwd().split("/")
+
+        try:
+            index = cur_dir.index(dir_name)
+        except ValueError:
+            return None
+
+        return "/".join(cur_dir[0:index + 1])
 
 
 class GameObject:
@@ -34,6 +47,13 @@ class GameObject:
     def min_init(cls, name, max_time_sec):
         return GameObject(name, 0, 0, max_time_sec)
 
+    @classmethod
+    def from_dict(cls, attrs):
+        game_obj = GameObject("", 0, 0, 0)
+        for key, value in attrs.items():
+            setattr(game_obj, key, value)
+        return game_obj
+
     def has_time(self):
         return time.time() < self.start_time + self.max_time
 
@@ -47,16 +67,25 @@ class GameObject:
         print(f"Killed {self.name}")
 
     def start_now(self):
-        self.start_time = time.time()
+        self.start_time = int(time.time())
 
     def end_now(self):
-        self.end_time = time.time()
+        self.end_time = int(time.time())
 
     def update(self, new_state):
         if self == new_state:
             self.end_time = new_state.end_time
             self.max_time = new_state.max_time
             self.PIDS = new_state.PIDS
+
+    # TODO add test
+    def is_valid(self):
+        name = self.name is not None and type(self.name) is str
+        max_time = self.max_time is not 0 and type(self.max_time) is int
+        start_time = type(self.start_time) is int
+        end_time = type(self.end_time) is int
+
+        return name and max_time and start_time and end_time
 
     def __eq__(self, other):
         if isinstance(other, GameObject):
@@ -78,23 +107,83 @@ class GameObject:
 
 
 class DataManager:
-    class StoreData:
+
+    def __init__(self, Settings):
+        self.settings = Settings
+
+
+    # TODO figure out how to pass the settings in the class/static instance
+    @classmethod
+    def get_db(cls, db_loc):
+        db = sqlite3.connect(db_loc, detect_types=sqlite3.PARSE_DECLTYPES)
+        db.row_factory = sqlite3.Row
+        return db
+
+    class GetData:
+        def __init__(self, dm):
+            self.db = dm.get_db()
+
         def __enter__(self):
-            self.db = database.get_db()
+            return self.db
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            self.db.close()
+
+    class StoreData:
+        def __init__(self, dm):
+            self.db = dm.get_db()
+
+        def __enter__(self, dm):
             return self.db
 
         def __exit__(self, exc_type, exc_val, exc_tb):
             self.db.commit()
             self.db.close()
 
+    # TODO add test
+    @classmethod
+    def to_obj(cls, db_result):
+        game_obj = GameObject.from_dict(db_result)
+        if game_obj.is_valid():
+            return game_obj
+        else:
+            return None
+
+    # TODO add test
+    @classmethod
+    def get(cls, **query_params):
+        with cls.GetData() as db:
+            chain_where = ""
+
+            # Goes through filtering params and adds them to the chain
+            filter_count = 0
+            for key, value in query_params:
+                chain_where += f" {key}={value} AND"
+                if filter_count != len(query_params.keys()):
+                    chain_where += " AND"
+
+                filter_count += 1
+
+            DataManager.GetData.query(f"SELECT * FROM game_log WHERE {chain_where} LIMIT 1;")
+
+    @classmethod
+    def query(cls, query):
+        with DataManager.GetData(cls) as db:
+            conn = db.cursor()
+            conn.execute(query)
+            result = conn.fetchall()
+
     @classmethod
     def store_new(cls, game_obj):
-        with cls.StoreData() as db:
-            command = f"INSERT INTO game_log (game_name, start_time, end_time, max_time) VALUES({game_obj.name}, {game_obj.start_time}, {game_obj.end_time}, {game_obj.max_time})"
+        if isinstance(game_obj, GameObject):
+            with cls() as db:
+                c = db.cursor()
+                command = f"INSERT INTO game_log (game_name, start_time, end_time, max_time) VALUES('{game_obj.name}', {int(game_obj.start_time)}, {int(game_obj.end_time)}, {int(game_obj.max_time)})"
+                c.execute(command)
 
-    # Store a game object from scratch
-    # Update a game object's end time
-    # Get a game object from the database
+
+# Update a game object's end time
+# Get a game object from the database
 
 
 class CurrentState:
