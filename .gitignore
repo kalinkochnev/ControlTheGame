@@ -12,4 +12,5 @@
 
 virtenv/
 settings.json
-**.sqlite
+flask_app/instance/flaskr.sqlite
+flask_app/tests/test_resources/test_db.sqlite
