@@ -16,7 +16,6 @@ class Settings:
         self.tracking_games = game_objs
         self.extra_time = max_extra_time
         self.loop_time = loop_time
-        self.db_loc = None
 
     def game_lower_names(self):
         return [game.name for game in self.tracking_games]
@@ -36,12 +35,13 @@ class Settings:
 class GameObject:
 
     def __init__(self, name, start_time, end_time, max_time):
+        self.db_id = None
         self.PIDS = []
         self.is_running = False
         self.name = name
-        self.start_time = start_time
-        self.end_time = end_time
-        self.max_time = max_time
+        self.start_time = int(start_time)
+        self.end_time = int(end_time)
+        self.max_time = int(max_time)
 
     @classmethod
     def min_init(cls, name, max_time_sec):
@@ -50,8 +50,10 @@ class GameObject:
     @classmethod
     def from_dict(cls, attrs):
         game_obj = GameObject("", 0, 0, 0)
-        for key, value in attrs.items():
-            setattr(game_obj, key, value)
+        for key in attrs.keys():
+            if key == "id":
+                setattr(game_obj, f"db_{key}", attrs[key])
+            setattr(game_obj, key, attrs[key])
         return game_obj
 
     def has_time(self):
@@ -63,8 +65,7 @@ class GameObject:
                 psutil.Process(pid).kill()
                 self.PIDS.pop(pid)
             except psutil.NoSuchProcess:
-                print(f"Tried to kill process {pid} that did not exist")
-        print(f"Killed {self.name}")
+                pass
 
     def start_now(self):
         self.start_time = int(time.time())
@@ -78,7 +79,6 @@ class GameObject:
             self.max_time = new_state.max_time
             self.PIDS = new_state.PIDS
 
-    # TODO add test
     def is_valid(self):
         name = self.name is not None and type(self.name) is str
         max_time = self.max_time is not 0 and type(self.max_time) is int
@@ -108,13 +108,9 @@ class GameObject:
 
 class DataManager:
 
-    def __init__(self, Settings):
-        self.settings = Settings
-
-
-    # TODO figure out how to pass the settings in the class/static instance
     @classmethod
-    def get_db(cls, db_loc):
+    def get_db(cls):
+        db_loc = os.path.join(Settings.get_base_loc("ControlTheGame"), "flask_app/tests/test_resources/test_db.sqlite")
         db = sqlite3.connect(db_loc, detect_types=sqlite3.PARSE_DECLTYPES)
         db.row_factory = sqlite3.Row
         return db
@@ -133,14 +129,13 @@ class DataManager:
         def __init__(self, dm):
             self.db = dm.get_db()
 
-        def __enter__(self, dm):
+        def __enter__(self):
             return self.db
 
         def __exit__(self, exc_type, exc_val, exc_tb):
             self.db.commit()
             self.db.close()
 
-    # TODO add test
     @classmethod
     def to_obj(cls, db_result):
         game_obj = GameObject.from_dict(db_result)
@@ -149,37 +144,92 @@ class DataManager:
         else:
             return None
 
-    # TODO add test
+    @classmethod
+    def chain_where(cls, params):
+        # Goes through filtering params and adds them to the chain
+        filter_count = 0
+        chain_where = ""
+
+        for key, value in params.items():
+            if type(value) is str:
+                chain_where += f"{key}='{value}'"
+            else:
+                chain_where += f"{key}={value}"
+
+            if filter_count != len(params.keys()) - 1:
+                chain_where += " AND "
+
+            filter_count += 1
+        return chain_where
+
     @classmethod
     def get(cls, **query_params):
-        with cls.GetData() as db:
-            chain_where = ""
+        if len(query_params.keys()) == 0:
+            return None
 
-            # Goes through filtering params and adds them to the chain
-            filter_count = 0
-            for key, value in query_params:
-                chain_where += f" {key}={value} AND"
-                if filter_count != len(query_params.keys()):
-                    chain_where += " AND"
-
-                filter_count += 1
-
-            DataManager.GetData.query(f"SELECT * FROM game_log WHERE {chain_where} LIMIT 1;")
+        query = f"SELECT * FROM game_log WHERE {cls.chain_where(query_params)} LIMIT 1;"
+        result = DataManager.query(query, single=True)
+        return cls.to_obj(result)
 
     @classmethod
-    def query(cls, query):
+    def query(cls, query, single=False):
         with DataManager.GetData(cls) as db:
-            conn = db.cursor()
-            conn.execute(query)
-            result = conn.fetchall()
+            try:
+                conn = db.cursor()
+                conn.execute(query)
+                if single is True:
+                    return conn.fetchone()
+                else:
+                    return conn.fetchall()
+            except sqlite3.Error as e:
+                print(f"An error occurred with the database: {e.args[0]}")
 
     @classmethod
     def store_new(cls, game_obj):
         if isinstance(game_obj, GameObject):
-            with cls() as db:
-                c = db.cursor()
-                command = f"INSERT INTO game_log (game_name, start_time, end_time, max_time) VALUES('{game_obj.name}', {int(game_obj.start_time)}, {int(game_obj.end_time)}, {int(game_obj.max_time)})"
-                c.execute(command)
+            if game_obj.is_valid():
+                with cls.StoreData(cls) as db:
+                    c = db.cursor()
+                    command = f"INSERT INTO game_log (name, start_time, end_time, max_time) VALUES('{game_obj.name}', {int(game_obj.start_time)}, {int(game_obj.end_time)}, {int(game_obj.max_time)})"
+                    c.execute(command)
+
+    @classmethod
+    def store_many(cls, *game_objects):
+        query = f"INSERT INTO game_log (name, start_time, end_time, max_time) VALUES "
+        rows = ""
+        for game_obj in game_objects:
+            if isinstance(game_obj, GameObject):
+                if game_obj.is_valid():
+                    rows += f"('{game_obj.name}', {game_obj.start_time}, {game_obj.end_time}, {game_obj.max_time}),"
+        rows = rows[0:len(rows) - 1]
+
+        if len(rows) == 0:
+            return []
+
+        with cls.StoreData(cls) as db:
+            c = db.cursor()
+            c.execute(query + rows + ";")
+
+    @classmethod
+    def get_many(cls, limit=5, **query_params):
+        query = "SELECT * FROM game_log"
+
+        if len(query_params) != 0:
+            query = f" WHERE {cls.chain_where(query_params)}"
+
+        if limit is not None and type(limit) is int:
+            query += f" LIMIT {limit};"
+        elif limit is None:
+            query += ";"
+        else:
+            return []
+
+        game_objs = []
+        results = cls.query(query, single=False)
+        for row in results:
+            game_objs.append(cls.to_obj(row))
+
+        return game_objs
 
 
 # Update a game object's end time
@@ -352,7 +402,7 @@ def start_tracking():
     # chrome = GameObject.min_init("Chrome", 5)
     discord = GameObject.min_init("Discord", 5)
 
-    settings = Settings(1, 5, calculator, discord)
+    settings = Settings(1, 5, [calculator, discord])
 
     tracker = Tracker(settings)
     current_state = CurrentState(settings)

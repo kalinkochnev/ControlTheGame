@@ -12,3 +12,4 @@
 
 virtenv/
 settings.json
+*.sqlite

@@ -1,8 +1,8 @@
 import unittest
-from datetime import datetime, timedelta
 from unittest.mock import patch
 import time
 import psutil
+
 
 from flask_app.TrackingThread import GameObject
 
@@ -10,10 +10,10 @@ from flask_app.TrackingThread import GameObject
 class GameObjectTests(unittest.TestCase):
 
     def test_creation(self):
-        time = datetime.now()
-        obj = GameObject("test", time, time + timedelta(seconds=5), 10)
-        self.assertEqual(obj.start_time, time)
-        self.assertEqual(obj.end_time, time + timedelta(seconds=5))
+        test_time = time.time()
+        obj = GameObject("test", test_time, test_time + 5, 10)
+        self.assertEqual(obj.start_time, int(test_time))
+        self.assertEqual(obj.end_time, int(test_time + 5))
         self.assertEqual(obj.name, "test")
         self.assertEqual(obj.max_time, 10)
 
@@ -80,20 +80,72 @@ class GameObjectTests(unittest.TestCase):
 
         with patch("flask_app.TrackingThread.time.time") as mock_time:
             mock_time.return_value = start_time + 100
-            game_obj = GameObject("game", start_time, None, 100)
+            game_obj = GameObject("game", start_time, 0, 100)
             self.assertFalse(game_obj.has_time())
 
             mock_time.return_value = start_time + 100
-            game_obj = GameObject("game", start_time, None, 99)
+            game_obj = GameObject("game", start_time, 0, 99)
             self.assertFalse(game_obj.has_time())
 
             mock_time.return_value = start_time + 100
-            game_obj = GameObject("game", start_time, None, 200)
+            game_obj = GameObject("game", start_time, 0, 200)
             self.assertTrue(game_obj.has_time())
 
             mock_time.return_value = 100
-            game_obj = GameObject("game", start_time, None, 300)
+            game_obj = GameObject("game", start_time, 0, 300)
             self.assertTrue(game_obj.has_time())
+
+    def test_is_valid(self):
+        game = GameObject.min_init("game", 100)
+        self.assertTrue(game.is_valid())
+
+        with self.subTest("name testing"):
+            self.assertTrue(game.is_valid())
+            game.name = None
+            self.assertFalse(game.is_valid())
+            game.name = 1
+            self.assertFalse(game.is_valid())
+            game.name = "game"
+
+        with self.subTest("max_time testing"):
+            self.assertTrue(game.is_valid())
+            game.max_time = 0
+            self.assertFalse(game.is_valid())
+            game.max_time = "yay"
+            self.assertFalse(game.is_valid())
+            game.max_time = None
+            self.assertFalse(game.is_valid())
+            game.max_time = 100
+
+        with self.subTest("start_time testing"):
+            self.assertTrue(game.is_valid())
+            game.start_time = 0
+            self.assertTrue(game.is_valid())
+            game.start_time = "yay"
+            self.assertFalse(game.is_valid())
+            game.start_time = None
+            self.assertFalse(game.is_valid())
+            game.start_time = 0
+
+        with self.subTest("end_time testing"):
+            self.assertTrue(game.is_valid())
+            game.end_time = 0
+            self.assertTrue(game.is_valid())
+            game.end_time = "yay"
+            self.assertFalse(game.is_valid())
+            game.end_time = None
+            self.assertFalse(game.is_valid())
+
+    def test_from_dict(self):
+        values = {
+            'name': 'game',
+            'start_time': 10,
+            'end_time': 100,
+            'max_time': 200,
+        }
+        from_dict = GameObject.from_dict(values)
+        comparison = GameObject('game', 10, 100, 200)
+        self.assertTrue(comparison.deep_equal(from_dict))
 
 
 if __name__ == '__main__':
