@@ -15,14 +15,14 @@ class GameObjectTests(unittest.TestCase):
         self.assertEqual(obj.start_time, int(test_time))
         self.assertEqual(obj.end_time, int(test_time + 5))
         self.assertEqual(obj.name, "test")
-        self.assertEqual(obj.max_time, 10)
+        self.assertEqual(obj.time_remaining, 10)
 
     def test_min_init(self):
         obj = GameObject.min_init("test", 5)
         self.assertEqual(obj.start_time, 0)
         self.assertEqual(obj.end_time, 0)
         self.assertEqual(obj.name, "test")
-        self.assertEqual(obj.max_time, 5)
+        self.assertEqual(obj.time_remaining, 5)
 
     def test_eq(self):
         obj1 = GameObject.min_init("gameA", 0)
@@ -52,7 +52,7 @@ class GameObjectTests(unittest.TestCase):
         self.assertEqual(obj1.name, "game1")
         self.assertEqual(obj1.start_time, 0)
         self.assertEqual(obj1.end_time, 20)
-        self.assertEqual(obj1.max_time, 5)
+        self.assertEqual(obj1.time_remaining, 5)
         self.assertEqual(obj1.PIDS, [])
 
     def test_kill_game(self):
@@ -107,15 +107,15 @@ class GameObjectTests(unittest.TestCase):
             self.assertFalse(game.is_valid())
             game.name = "game"
 
-        with self.subTest("max_time testing"):
+        with self.subTest("time_remaining testing"):
             self.assertTrue(game.is_valid())
-            game.max_time = 0
+            game.time_remaining = 0
             self.assertFalse(game.is_valid())
-            game.max_time = "yay"
+            game.time_remaining = "yay"
             self.assertFalse(game.is_valid())
-            game.max_time = None
+            game.time_remaining = None
             self.assertFalse(game.is_valid())
-            game.max_time = 100
+            game.time_remaining = 100
 
         with self.subTest("start_time testing"):
             self.assertTrue(game.is_valid())
@@ -141,7 +141,7 @@ class GameObjectTests(unittest.TestCase):
             'name': 'game',
             'start_time': 10,
             'end_time': 100,
-            'max_time': 200,
+            'time_remaining': 200,
         }
         from_dict = GameObject.from_dict(values)
         comparison = GameObject('game', 10, 100, 200)

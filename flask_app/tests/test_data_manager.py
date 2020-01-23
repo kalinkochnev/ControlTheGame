@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
-from flask_app.TrackingThread import GameObject, DataManager, Settings
+from flask_app.TrackingThread import GameObject, DataManager, Settings, Tracker
 
 
 class TestDataManager(unittest.TestCase):
@@ -48,7 +48,7 @@ class TestDataManager(unittest.TestCase):
         self.assertEqual(game_obj.name, result['name'])
         self.assertEqual(int(game_obj.start_time), result['start_time'])
         self.assertEqual(int(game_obj.end_time), result['end_time'])
-        self.assertEqual(int(game_obj.max_time), result['max_time'])
+        self.assertEqual(int(game_obj.time_remaining), result['time_remaining'])
 
     def test_to_obj(self):
         game_obj = GameObject("test game", time.time(), time.time() + 1000, 2000)
@@ -65,12 +65,12 @@ class TestDataManager(unittest.TestCase):
         self.data_m.store_new(game_obj1)
 
         with patch("flask_app.TrackingThread.DataManager.query") as patched:
-            query = "SELECT * FROM game_log WHERE max_time=10 AND name='game' LIMIT 1;"
-            self.data_m.get(max_time=10, name="game")
+            query = "SELECT * FROM game_log WHERE time_remaining=10 AND name='game' LIMIT 1;"
+            self.data_m.get(time_remaining=10, name="game")
             patched.assert_called_with(query, single=True)
 
-            query = "SELECT * FROM game_log WHERE max_time=10 AND name='game' AND end_time=100 AND start_time=0 LIMIT 1;"
-            self.data_m.get(max_time=10, name="game", end_time=100, start_time=0)
+            query = "SELECT * FROM game_log WHERE time_remaining=10 AND name='game' AND end_time=100 AND start_time=0 LIMIT 1;"
+            self.data_m.get(time_remaining=10, name="game", end_time=100, start_time=0)
             patched.assert_called_with(query, single=True)
 
         self.assertIsNone(self.data_m.get())
@@ -112,7 +112,7 @@ class TestDataManager(unittest.TestCase):
         game1 = GameObject("game1", base.timestamp(), base.timestamp() + 350, 200)
         game2 = GameObject("game2", date1.timestamp(), date1.timestamp() + 534, 2300)
         game3 = GameObject("game3", date2.timestamp(), date2.timestamp() + 1000, 23)
-        game4 = GameObject("game4", date3.timestamp(), date3.timestamp() + 23, 200)
+        game4 = GameObject("game1", date3.timestamp(), date3.timestamp() + 23, 200)
         self.data_m.store_many(game1, game2, game3, game4)
 
         results = self.data_m.get_date_range(base, base + timedelta(days=3))
@@ -123,6 +123,12 @@ class TestDataManager(unittest.TestCase):
 
         results = self.data_m.get_date_range(date1, base + timedelta(days=7))
         self.assertEqual([game2, game3], results)
+
+        results = self.data_m.get_date_range(date1, base + timedelta(days=7), name="game3")
+        self.assertEqual([game3], results)
+
+        results = self.data_m.get_date_range(base, base + timedelta(days=9), name="game1")
+        self.assertEqual([game1, game4], results)
 
         results = self.data_m.get_date_range(base, base + timedelta(days=8))
         self.assertEqual([game1, game2, game3, game4], results)
@@ -135,7 +141,7 @@ class TestDataManager(unittest.TestCase):
         game1 = GameObject("game1", base.timestamp(), base.timestamp() + 350, 200)
         game2 = GameObject("game2", date1.timestamp(), date1.timestamp() + 534, 2300)
         game3 = GameObject("game3", date2.timestamp(), date2.timestamp() + 1000, 23)
-        game4 = GameObject("game4", base.timestamp(), base.timestamp() + 350, 200)
+        game4 = GameObject("game1", base.timestamp(), base.timestamp() + 350, 200)
         self.data_m.store_many(game1, game2, game3, game4)
 
         day_results = self.data_m.get_day(base)
@@ -143,6 +149,48 @@ class TestDataManager(unittest.TestCase):
 
         day_results = self.data_m.get_day(date1)
         self.assertEqual([game2], day_results)
+
+        day_results = self.data_m.get_day(base, name="game1")
+        self.assertEqual([game1, game4], day_results)
+
+    # Tracker could not find any games for the day, starts new log
+    def test_Tracker_load_data_empty(self):
+        track1 = GameObject("Overwatch", 0, 0, 1000)
+        track2 = GameObject("Counterstrike", 0, 0, 1000)
+        settings = Settings(0, 1, [track1, track2])
+        tracker = Tracker(settings)
+        tracker.load_day_data()
+
+        # No data in database
+        self.assertEqual([track1, track2], tracker.current_state)
+        tracker = Tracker(settings)
+
+        # Data in db but not same day
+        prev_day = datetime(2019, 10, 1)
+        old_log1 = GameObject("Overwatch", prev_day.timestamp(), prev_day.timestamp() + 10, 0)
+        old_log2 = GameObject("Counterstrike", prev_day.timestamp() + 1000, prev_day.timestamp() + 6573, 0)
+        self.data_m.store_many(old_log1, old_log2)
+        tracker.load_day_data()
+        self.assertEqual([track1, track2], tracker.current_state)
+
+    # Tracker found logged game data for that day
+    def test_Tracker_load_data_existing(self):
+        track1 = GameObject("Overwatch", 0, 0, 1000)
+        track2 = GameObject("Counterstrike", 0, 0, 1000)
+        settings = Settings(0, 1, [track1, track2])
+        tracker = Tracker(settings)
+        base_time = datetime.today().timestamp()
+
+        game1 = GameObject("Overwatch", base_time, base_time + 500, 500)
+        game2 = GameObject("Counterstrike", base_time + 1000, base_time + 1000 + 500, 500)
+        game1b = GameObject("Overwatch", base_time + 3000, base_time + 3000 + 200, 300)
+        game2b = GameObject("Counterstrike", base_time + 5000, base_time + 5000 + 500, 10)
+        game1c = GameObject("Overwatch", base_time + 7000, base_time + 7000 + 10, 0)
+        DataManager.store_many(game1, game2, game1b)
+
+        tracker.load_day_data()
+        self.assertEqual([game1c, game2b], tracker.current_state)
+
 
 
 if __name__ == '__main__':

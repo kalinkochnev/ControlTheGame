@@ -1,7 +1,8 @@
+import time
 import unittest
 from unittest.mock import patch
 
-from flask_app.TrackingThread import Settings, GameObject, Tracker, tracker_queue
+from flask_app.TrackingThread import Settings, GameObject, Tracker, tracker_queue, DataManager
 
 
 class TrackerTests(unittest.TestCase):
@@ -10,6 +11,7 @@ class TrackerTests(unittest.TestCase):
         self.game_obj2 = GameObject.min_init("game2", 0)
         self.settings = Settings(0, 1, [self.game_obj1, self.game_obj2])
         self.tracker = Tracker(self.settings)
+        self.tracker.load_day_data()
 
     def test_creation(self):
         self.assertEqual(1, self.tracker.loop_time)
@@ -64,7 +66,6 @@ class TrackerTests(unittest.TestCase):
         self.assertFalse(item2 is self.game_obj2)
         self.assertTrue(self.game_obj1.deep_equal(item1))
         self.assertTrue(self.game_obj2.deep_equal(item2))
-
 
 
 if __name__ == '__main__':

@@ -5,5 +5,5 @@ CREATE TABLE game_log (
     name TEXT NOT NULL,
     start_time INTEGER NOT NULL,
     end_time INTEGER,
-    max_time INTEGER
+    time_remaining INTEGER
 );

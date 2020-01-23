@@ -50,7 +50,7 @@ class CurrentStateTests(unittest.TestCase):
         self.assertEqual("game1", self.game_obj1.name)
         self.assertEqual(0, self.game_obj1.start_time)
         self.assertEqual(30, self.game_obj1.end_time)
-        self.assertEqual(1, self.game_obj1.max_time)
+        self.assertEqual(1, self.game_obj1.time_remaining)
 
         # Check that the reference in the list gets updated too
         index = self.state.get_game_index_running(self.game_obj1)

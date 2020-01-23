@@ -15,9 +15,9 @@ tracker_queue = queue.Queue()
 class Settings:
 
     def __init__(self, max_extra_time, loop_time, game_objs):
-        self.tracking_games = game_objs
         self.extra_time = max_extra_time
         self.loop_time = loop_time
+        self.tracking_games = game_objs
 
     def game_lower_names(self):
         return [game.name for game in self.tracking_games]
@@ -36,14 +36,14 @@ class Settings:
 
 class GameObject:
 
-    def __init__(self, name, start_time, end_time, max_time):
+    def __init__(self, name, start_time, end_time, time_remaining):
         self.db_id = None
         self.PIDS = []
         self.is_running = False
         self.name = name
         self.start_time = int(start_time)
         self.end_time = int(end_time)
-        self.max_time = int(max_time)
+        self.time_remaining = int(time_remaining)
 
     @classmethod
     def min_init(cls, name, max_time_sec):
@@ -59,7 +59,7 @@ class GameObject:
         return game_obj
 
     def has_time(self):
-        return time.time() < self.start_time + self.max_time
+        return time.time() < self.start_time + self.time_remaining
 
     def kill(self):
         for pid in self.PIDS:
@@ -78,12 +78,12 @@ class GameObject:
     def update(self, new_state):
         if self == new_state:
             self.end_time = new_state.end_time
-            self.max_time = new_state.max_time
+            self.time_remaining = new_state.time_remaining
             self.PIDS = new_state.PIDS
 
     def is_valid(self):
         name = self.name is not None and type(self.name) is str
-        max_time = self.max_time is not 0 and type(self.max_time) is int
+        max_time = self.time_remaining is not 0 and type(self.time_remaining) is int
         start_time = type(self.start_time) is int
         end_time = type(self.end_time) is int
 
@@ -100,7 +100,7 @@ class GameObject:
         is_running_equal = other_obj.is_running == self.is_running
         start_time_equal = other_obj.start_time == self.start_time
         end_time_equal = other_obj.end_time == self.end_time
-        max_time_equal = other_obj.max_time == self.max_time
+        max_time_equal = other_obj.time_remaining == self.time_remaining
 
         return pids_equal and name_equal and is_running_equal and start_time_equal and end_time_equal and max_time_equal
 
@@ -192,17 +192,17 @@ class DataManager:
             if game_obj.is_valid():
                 with cls.StoreData(cls) as db:
                     c = db.cursor()
-                    command = f"INSERT INTO game_log (name, start_time, end_time, max_time) VALUES('{game_obj.name}', {int(game_obj.start_time)}, {int(game_obj.end_time)}, {int(game_obj.max_time)})"
+                    command = f"INSERT INTO game_log (name, start_time, end_time, time_remaining) VALUES('{game_obj.name}', {int(game_obj.start_time)}, {int(game_obj.end_time)}, {int(game_obj.time_remaining)})"
                     c.execute(command)
 
     @classmethod
     def store_many(cls, *game_objects):
-        query = f"INSERT INTO game_log (name, start_time, end_time, max_time) VALUES "
+        query = f"INSERT INTO game_log (name, start_time, end_time, time_remaining) VALUES "
         rows = ""
         for game_obj in game_objects:
             if isinstance(game_obj, GameObject):
                 if game_obj.is_valid():
-                    rows += f"('{game_obj.name}', {game_obj.start_time}, {game_obj.end_time}, {game_obj.max_time}),"
+                    rows += f"('{game_obj.name}', {game_obj.start_time}, {game_obj.end_time}, {game_obj.time_remaining}),"
         rows = rows[0:len(rows) - 1]
 
         if len(rows) == 0:
@@ -234,11 +234,20 @@ class DataManager:
         return game_objs
 
     @classmethod
-    def get_date_range(cls, start, end, limit=5):
+    def get_date_range(cls, start, end, limit=5, **query_params):
         epoch1 = start.timestamp()
         epoch2 = end.timestamp()
 
-        query = f"SELECT * FROM game_log WHERE start_time >= {epoch1} AND start_time <= {epoch2} LIMIT {limit};"
+        query = ""
+        if len(query_params.keys()) != 0:
+            query = f"SELECT * FROM game_log WHERE start_time >= {epoch1} AND start_time <= {epoch2} AND {cls.chain_where(query_params)}"
+        else:
+            query = f"SELECT * FROM game_log WHERE start_time >= {epoch1} AND start_time <= {epoch2}"
+
+        if limit is not None and limit is int:
+            query += f" LIMIT {limit};"
+        else:
+            query += f";"
 
         game_objs = []
         results = cls.query(query, single=False)
@@ -248,11 +257,11 @@ class DataManager:
         return game_objs
 
     @classmethod
-    def get_day(cls, day, limit=5):
+    def get_day(cls, day, limit=5, **query_params):
         start = datetime(day.year, day.month, day.day)
         end = start + timedelta(hours=24)
 
-        return cls.get_date_range(start, end, limit)
+        return cls.get_date_range(start, end, limit, **query_params)
 
 # Update a game object's end time
 # Get a game object from the database
@@ -341,8 +350,24 @@ class Tracker(threading.Thread):
 
     def __init__(self, SettingsClass):
         threading.Thread.__init__(self)
-        self.loop_time = SettingsClass.loop_time
-        self.current_state = SettingsClass.tracking_games
+        self.settings = SettingsClass
+        self.loop_time = self.settings.loop_time
+        self.current_state = []
+
+    # TODO add tests
+    def load_day_data(self):
+        for game in self.settings.tracking_games:
+            game_inst = DataManager.get_day(datetime.today(), limit=None, name=game.name)
+
+            # TODO make database query for lowest value instead of all of them
+            if len(game_inst) is not 0:
+                time_min = (pow(10, 10), None)
+                for g in game_inst:
+                    if g.time_remaining < time_min[0]:
+                        time_min = (g.time_remaining, g)
+                self.current_state.append(time_min[1])
+            else:
+                self.current_state.append(game)
 
     def run(self):
         print("Starting tracking thread!\n")
