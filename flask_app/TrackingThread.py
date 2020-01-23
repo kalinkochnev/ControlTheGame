@@ -3,6 +3,8 @@ import queue
 import sqlite3
 import threading
 import time
+from datetime import datetime, timedelta
+
 import psutil
 import copy
 import time
@@ -231,6 +233,26 @@ class DataManager:
 
         return game_objs
 
+    @classmethod
+    def get_date_range(cls, start, end, limit=5):
+        epoch1 = start.timestamp()
+        epoch2 = end.timestamp()
+
+        query = f"SELECT * FROM game_log WHERE start_time >= {epoch1} AND start_time <= {epoch2} LIMIT {limit};"
+
+        game_objs = []
+        results = cls.query(query, single=False)
+        for row in results:
+            game_objs.append(cls.to_obj(row))
+
+        return game_objs
+
+    @classmethod
+    def get_day(cls, day, limit=5):
+        start = datetime(day.year, day.month, day.day)
+        end = start + timedelta(hours=24)
+
+        return cls.get_date_range(start, end, limit)
 
 # Update a game object's end time
 # Get a game object from the database

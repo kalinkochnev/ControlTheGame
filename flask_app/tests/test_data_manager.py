@@ -1,6 +1,7 @@
 import time
 import unittest
 import os
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 from flask_app.TrackingThread import GameObject, DataManager, Settings
@@ -58,7 +59,10 @@ class TestDataManager(unittest.TestCase):
 
     def test_get(self):
         game_obj = GameObject("game", 0, 100, 10)
+        game_obj1 = GameObject("game1", 0, 100, 10)
+
         self.data_m.store_new(game_obj)
+        self.data_m.store_new(game_obj1)
 
         with patch("flask_app.TrackingThread.DataManager.query") as patched:
             query = "SELECT * FROM game_log WHERE max_time=10 AND name='game' LIMIT 1;"
@@ -71,6 +75,7 @@ class TestDataManager(unittest.TestCase):
 
         self.assertIsNone(self.data_m.get())
         self.assertTrue(game_obj.deep_equal(self.data_m.get(name="game")))
+        self.assertTrue(game_obj1.deep_equal(self.data_m.get(name="game1")))
 
     def test_store_many(self):
         game1 = GameObject("game1", time.time(), time.time() + 100, 200)
@@ -97,6 +102,47 @@ class TestDataManager(unittest.TestCase):
 
         objs = self.data_m.get_many(limit=1)
         self.assertEqual(1, len(objs))
+
+    def test_date_range(self):
+        base = datetime(2020, 11, 1)
+        date1 = base + timedelta(days=2)
+        date2 = base + timedelta(days=6)
+        date3 = base + timedelta(days=8)
+
+        game1 = GameObject("game1", base.timestamp(), base.timestamp() + 350, 200)
+        game2 = GameObject("game2", date1.timestamp(), date1.timestamp() + 534, 2300)
+        game3 = GameObject("game3", date2.timestamp(), date2.timestamp() + 1000, 23)
+        game4 = GameObject("game4", date3.timestamp(), date3.timestamp() + 23, 200)
+        self.data_m.store_many(game1, game2, game3, game4)
+
+        results = self.data_m.get_date_range(base, base + timedelta(days=3))
+        self.assertEqual([game1, game2], results)
+
+        results = self.data_m.get_date_range(date1, base + timedelta(days=3))
+        self.assertEqual([game2], results)
+
+        results = self.data_m.get_date_range(date1, base + timedelta(days=7))
+        self.assertEqual([game2, game3], results)
+
+        results = self.data_m.get_date_range(base, base + timedelta(days=8))
+        self.assertEqual([game1, game2, game3, game4], results)
+
+    def test_get_day(self):
+        base = datetime(2020, 11, 1)
+        date1 = base + timedelta(days=2)
+        date2 = base + timedelta(days=6)
+
+        game1 = GameObject("game1", base.timestamp(), base.timestamp() + 350, 200)
+        game2 = GameObject("game2", date1.timestamp(), date1.timestamp() + 534, 2300)
+        game3 = GameObject("game3", date2.timestamp(), date2.timestamp() + 1000, 23)
+        game4 = GameObject("game4", base.timestamp(), base.timestamp() + 350, 200)
+        self.data_m.store_many(game1, game2, game3, game4)
+
+        day_results = self.data_m.get_day(base)
+        self.assertEqual([game1, game4], day_results)
+
+        day_results = self.data_m.get_day(date1)
+        self.assertEqual([game2], day_results)
 
 
 if __name__ == '__main__':
