@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
-from flask_app.TrackingThread import GameObject, DataManager, Settings, Tracker
+from flask_app.TrackingThread import GameObject, DataManager, Settings, Tracker, CurrentState
 
 
 class TestDataManager(unittest.TestCase):
@@ -13,8 +13,8 @@ class TestDataManager(unittest.TestCase):
         self.db_loc = ""
         self.init_test_db()
 
-        self.game_obj1 = GameObject.min_init("game1", 0)
-        self.game_obj2 = GameObject.min_init("game2", 0)
+        self.game_obj1 = GameObject.min_init("game1", 1)
+        self.game_obj2 = GameObject.min_init("game2", 1)
         self.settings = Settings(5, 1, [self.game_obj1, self.game_obj2])
         self.settings.db_loc = self.db_loc
         self.data_m = DataManager()
@@ -153,6 +153,20 @@ class TestDataManager(unittest.TestCase):
         day_results = self.data_m.get_day(base, name="game1")
         self.assertEqual([game1, game4], day_results)
 
+    def test_id_of_obj(self):
+        DataManager.store_new(self.game_obj1)
+        self.assertEqual(1, DataManager.id_of_obj(self.game_obj1))
+
+    def test_update_game(self):
+        game = GameObject.min_init("game", 1)
+        DataManager.store_new(game)
+        db_id = DataManager.id_of_obj(game)
+
+        DataManager.update_game(db_id, time_remaining=100, name="ay")
+        stored = DataManager.get(id=db_id)
+        self.assertEqual(100, stored.time_remaining)
+        self.assertEqual('ay', stored.name)
+
     # Tracker could not find any games for the day, starts new log
     def test_Tracker_load_data_empty(self):
         track1 = GameObject("Overwatch", 0, 0, 1000)
@@ -185,12 +199,49 @@ class TestDataManager(unittest.TestCase):
         game2 = GameObject("Counterstrike", base_time + 1000, base_time + 1000 + 500, 500)
         game1b = GameObject("Overwatch", base_time + 3000, base_time + 3000 + 200, 300)
         game2b = GameObject("Counterstrike", base_time + 5000, base_time + 5000 + 500, 10)
-        game1c = GameObject("Overwatch", base_time + 7000, base_time + 7000 + 10, 0)
-        DataManager.store_many(game1, game2, game1b)
+        game1c = GameObject("Overwatch", base_time + 7000, base_time + 7000 + 10, 1)
+        DataManager.store_many(game1, game2, game1b, game2b, game1c)
 
         tracker.load_day_data()
         self.assertEqual([game1c, game2b], tracker.current_state)
+        self.assertEqual(5, DataManager.id_of_obj(game1c))
+        self.assertEqual(5, DataManager.id_of_obj(game1c))
+        self.assertEqual(None, tracker.current_state[1].db_id)
+        self.assertEqual(None, tracker.current_state[0].db_id)
+        self.assertEqual(0, tracker.current_state[0].start_time)
+        self.assertEqual(0, tracker.current_state[1].start_time)
+        self.assertEqual(0, tracker.current_state[0].end_time)
+        self.assertEqual(0, tracker.current_state[1].end_time)
+        self.assertEqual(1, tracker.current_state[0].time_remaining)
+        self.assertEqual(10, tracker.current_state[1].time_remaining)
 
+    def test_clean_invalid(self):
+        unfinished_game = GameObject('game', time.time(), 0, 100)
+        unfinished_game2 = GameObject('game1', time.time() + 5, 0, 250)
+        DataManager.store_many(unfinished_game, unfinished_game2)
+        DataManager.clean_invalid()
+
+        games = DataManager.get_many()
+        self.assertEqual(50 + unfinished_game.start_time, games[0].end_time)
+        self.assertEqual(125 + unfinished_game2.start_time, games[1].end_time)
+
+    def test_CurrentState_game_start_db(self):
+        state = CurrentState(self.settings)
+        game1 = GameObject("game", time.time(), 0, 200)
+        state.game_start(game1)
+
+        result = DataManager.get(name="game")
+        self.assertTrue(game1.deep_equal(result))
+
+    def test_CurrentState_game_end_db(self):
+        state = CurrentState(self.settings)
+        game1 = GameObject("game", time.time(), 0, 200)
+        state.game_start(game1)
+        state.game_end(game1)
+
+        result = DataManager.get(name="game")
+        self.assertTrue(game1.deep_equal(result))
+        self.assertIsNot(0, game1.end_time)
 
 
 if __name__ == '__main__':

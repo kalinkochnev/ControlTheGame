@@ -25,26 +25,26 @@ class GameObjectTests(unittest.TestCase):
         self.assertEqual(obj.time_remaining, 5)
 
     def test_eq(self):
-        obj1 = GameObject.min_init("gameA", 0)
-        obj2 = GameObject.min_init("gameB", 0)
+        obj1 = GameObject.min_init("gameA", 1)
+        obj2 = GameObject.min_init("gameB", 1)
         self.assertNotEqual(obj1, obj2)
-        obj3 = GameObject.min_init("gameA", 0)
+        obj3 = GameObject.min_init("gameA", 1)
         self.assertEqual(obj1, obj3)
         obj4 = GameObject.min_init("gameA", 1)
         self.assertEqual(obj1, obj4)
 
     def test_start_now(self):
-        obj = GameObject.min_init("game", 0)
+        obj = GameObject.min_init("game", 1)
         obj.start_now()
-        self.assertNotEqual(obj.start_time, 0)
+        self.assertNotEqual(obj.start_time, 1)
 
     def test_end_now(self):
-        obj = GameObject.min_init("game", 0)
+        obj = GameObject.min_init("game", 1)
         obj.end_now()
-        self.assertNotEqual(obj.end_time, 0)
+        self.assertNotEqual(obj.end_time, 1)
 
     def test_update(self):
-        obj1 = GameObject.min_init("game1", 0)
+        obj1 = GameObject.min_init("game1", 1)
         obj1.PIDS = [1, 2, 3]
 
         obj2 = GameObject("game1", 10, 20, 5)

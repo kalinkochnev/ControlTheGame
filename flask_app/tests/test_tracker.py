@@ -7,8 +7,8 @@ from flask_app.TrackingThread import Settings, GameObject, Tracker, tracker_queu
 
 class TrackerTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.game_obj1 = GameObject.min_init("game1", 0)
-        self.game_obj2 = GameObject.min_init("game2", 0)
+        self.game_obj1 = GameObject.min_init("game1", 1)
+        self.game_obj2 = GameObject.min_init("game2", 1)
         self.settings = Settings(0, 1, [self.game_obj1, self.game_obj2])
         self.tracker = Tracker(self.settings)
         self.tracker.load_day_data()

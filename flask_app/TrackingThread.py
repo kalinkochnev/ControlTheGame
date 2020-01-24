@@ -42,15 +42,18 @@ class GameObject:
         self.is_running = False
         self.name = name
         self.start_time = int(start_time)
-        self.end_time = int(end_time)
+        self.end_time = int(end_time)  # if end time isn't determined yet, is stored as 0 in db
         self.time_remaining = int(time_remaining)
 
     @classmethod
-    def min_init(cls, name, max_time_sec):
-        return GameObject(name, 0, 0, max_time_sec)
+    def min_init(cls, name, time_remaining):
+        return GameObject(name, 0, 0, time_remaining)
 
     @classmethod
     def from_dict(cls, attrs):
+        if attrs is None:
+            return None
+
         game_obj = GameObject("", 0, 0, 0)
         for key in attrs.keys():
             if key == "id":
@@ -60,6 +63,9 @@ class GameObject:
 
     def has_time(self):
         return time.time() < self.start_time + self.time_remaining
+
+    def get_time_remaining(self):
+        return self.time_remaining - (self.end_time - self.start_time)
 
     def kill(self):
         for pid in self.PIDS:
@@ -77,17 +83,18 @@ class GameObject:
 
     def update(self, new_state):
         if self == new_state:
+            self.db_id = new_state.db_id
             self.end_time = new_state.end_time
             self.time_remaining = new_state.time_remaining
             self.PIDS = new_state.PIDS
 
     def is_valid(self):
         name = self.name is not None and type(self.name) is str
-        max_time = self.time_remaining is not 0 and type(self.time_remaining) is int
+        time_remaining = type(self.time_remaining) is int and self.time_remaining is not 0
         start_time = type(self.start_time) is int
         end_time = type(self.end_time) is int
 
-        return name and max_time and start_time and end_time
+        return name and time_remaining and start_time and end_time
 
     def __eq__(self, other):
         if isinstance(other, GameObject):
@@ -190,10 +197,13 @@ class DataManager:
     def store_new(cls, game_obj):
         if isinstance(game_obj, GameObject):
             if game_obj.is_valid():
-                with cls.StoreData(cls) as db:
-                    c = db.cursor()
-                    command = f"INSERT INTO game_log (name, start_time, end_time, time_remaining) VALUES('{game_obj.name}', {int(game_obj.start_time)}, {int(game_obj.end_time)}, {int(game_obj.time_remaining)})"
-                    c.execute(command)
+                try:
+                    with cls.StoreData(cls) as db:
+                        c = db.cursor()
+                        command = f"INSERT INTO game_log (name, start_time, end_time, time_remaining) VALUES('{game_obj.name}', {int(game_obj.start_time)}, {int(game_obj.end_time)}, {int(game_obj.time_remaining)})"
+                        c.execute(command)
+                except sqlite3.Error as e:
+                    print(f"An error occurred with the database: {e.args[0]}")
 
     @classmethod
     def store_many(cls, *game_objects):
@@ -208,16 +218,19 @@ class DataManager:
         if len(rows) == 0:
             return []
 
-        with cls.StoreData(cls) as db:
-            c = db.cursor()
-            c.execute(query + rows + ";")
+        try:
+            with cls.StoreData(cls) as db:
+                c = db.cursor()
+                c.execute(query + rows + ";")
+        except sqlite3.Error as e:
+            print(f"An error occurred with the database: {e.args[0]}")
 
     @classmethod
     def get_many(cls, limit=5, **query_params):
         query = "SELECT * FROM game_log"
 
         if len(query_params) != 0:
-            query = f" WHERE {cls.chain_where(query_params)}"
+            query += f" WHERE {cls.chain_where(query_params)}"
 
         if limit is not None and type(limit) is int:
             query += f" LIMIT {limit};"
@@ -263,14 +276,49 @@ class DataManager:
 
         return cls.get_date_range(start, end, limit, **query_params)
 
-# Update a game object's end time
-# Get a game object from the database
+    @classmethod
+    def id_of_obj(cls, game_obj):
+        return cls.get(start_time=game_obj.start_time).db_id
+
+    @classmethod
+    def update_game(cls, id, **values):
+        set_vals = ""
+        count = 0
+        for key, value in values.items():
+            if type(value) is str:
+                set_vals += f"{key}='{value}'"
+            else:
+                set_vals += f"{key}={value}"
+
+            if count != len(values.keys()) - 1:
+                set_vals += ", "
+
+            count += 1
+
+        command = f"UPDATE game_log SET {set_vals} WHERE id={id};"
+        try:
+            with cls.StoreData(cls) as db:
+                conn = db.cursor()
+                conn.execute(command)
+        except sqlite3.Error as e:
+            print(f"An error occurred with the database: {e.args[0]}")
+
+    # Cleans nulls and 0 values where there shouldn't be
+    @classmethod
+    def clean_invalid(cls):
+        invalid_end_values = cls.get_many(limit=None, end_time=0)
+        for game in invalid_end_values:
+            # End time is start time + half of time remaining, which is more fair than no time
+            end_time = game.start_time + (game.time_remaining / 2)
+            time_remaining = game.time_remaining - (game.time_remaining/2)
+            cls.update_game(game.id, end_time=end_time, time_remaining=time_remaining)
 
 
 class CurrentState:
     def __init__(self, SettingsClass):
         self.currently_running = []
         self.settings = SettingsClass
+        self.GM = GameManager(self)
 
     def add_to_running(self, game):
         if game not in self.currently_running:
@@ -293,16 +341,28 @@ class CurrentState:
             return self.currently_running.index(other_game_obj)
         return None
 
+    # TODO make tests
     def game_start(self, game):
+        assert game.db_id is None
+
         self.add_to_running(game)
         index = self.get_game_index_running(game)
         self.currently_running[index].start_now()
-        # TODO add storage capability
 
+        # store the change in the db
+        game.time_remaining = game.get_time_remaining()
+        DataManager.store_new(game)
+        id = DataManager.id_of_obj(game)
+        game.id = id
+
+    # TODO make tests
     def game_end(self, game):
         self.remove_from_running(game)
         game.end_now()
-        # TODO add storage capability
+        id = DataManager.id_of_obj(game)
+
+        if id is not None:
+            DataManager.update_game(id, end_time=game.end_time, time_remaining=game.get_time_remaining())
 
     def game_update(self, old_status, new_status):
         if old_status.name != new_status.name:
@@ -334,6 +394,7 @@ class CurrentState:
             else:
                 if len(new_state.PIDS) > 0:
                     self.game_start(new_state)
+        self.GM.run()
 
     def has_any_diff(self, old, new):
         return self.has_run_diff(old, new) or self.has_pid_diff(old, new)
@@ -354,8 +415,10 @@ class Tracker(threading.Thread):
         self.loop_time = self.settings.loop_time
         self.current_state = []
 
-    # TODO add tests
+    # TODO add test for when data has null value for end time or time_left
     def load_day_data(self):
+        DataManager.clean_invalid()
+
         for game in self.settings.tracking_games:
             game_inst = DataManager.get_day(datetime.today(), limit=None, name=game.name)
 
@@ -365,7 +428,9 @@ class Tracker(threading.Thread):
                 for g in game_inst:
                     if g.time_remaining < time_min[0]:
                         time_min = (g.time_remaining, g)
-                self.current_state.append(time_min[1])
+
+                new_game_obj = GameObject.min_init(game.name, time_min[0])
+                self.current_state.append(new_game_obj)
             else:
                 self.current_state.append(game)
 
@@ -399,9 +464,6 @@ class Tracker(threading.Thread):
             else:
                 game.is_running = True
 
-        """for game in self.state:
-            print(f"{game.name} has been found with pids: {game.PIDS}")"""
-
     def add_to_tracker_q(self):
         for game in self.current_state:
             tracker_queue.put(copy.deepcopy(game))
@@ -421,9 +483,12 @@ class Tracker(threading.Thread):
 class GameManager:
     blocked_games = []
 
-    def run(self, state):
-        self.update_block(state)
-        self.enforce_block(state)
+    def __init__(self, status):
+        self.status = status
+
+    def run(self):
+        self.update_block()
+        self.enforce_block()
 
     def block(self, game):
         if game.name not in self.blocked_names():
@@ -432,16 +497,16 @@ class GameManager:
     def blocked_names(self):
         return [game.name for game in self.blocked_games]
 
-    def update_block(self, state):
-        for game in state.currently_running:
+    def update_block(self):
+        for game in self.status.currently_running:
             if game.has_time() is False:
                 self.block(game)
 
-    def enforce_block(self, state):
-        for game in state.currently_running:
+    def enforce_block(self):
+        for game in self.status.currently_running:
             if game.name in self.blocked_names():
                 game.kill()
-                state.remove_from_running(game)
+                self.status.remove_from_running(game)
 
 
 def start_tracking():

@@ -5,8 +5,8 @@ from flask_app.TrackingThread import GameObject, Settings, CurrentState, tracker
 
 class CurrentStateTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.game_obj1 = GameObject.min_init("game1", 0)
-        self.game_obj2 = GameObject.min_init("game2", 0)
+        self.game_obj1 = GameObject("game1", 10, 100, 50)
+        self.game_obj2 = GameObject("game2", 10, 100, 50)
         self.settings = Settings(5, 1, [self.game_obj1, self.game_obj2])
         self.state = CurrentState(self.settings)
 
@@ -101,7 +101,7 @@ class CurrentStateTests(unittest.TestCase):
         self.game_obj1.is_running = True
         self.game_obj1.PIDS = [1, 2, 3]
         tracker_queue.put(self.game_obj1)
-
+        # TODO PSUTIL being called
         self.state.update_running()
         self.assertEqual([self.game_obj1], self.state.currently_running)
 

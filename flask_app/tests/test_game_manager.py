@@ -6,7 +6,11 @@ from flask_app.TrackingThread import GameObject, GameManager, Tracker, CurrentSt
 
 class GameManagerTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.manager = GameManager()
+        self.game_obj = GameObject.min_init("game1", 1)
+        self.game_obj2 = GameObject.min_init("game2", 1)
+        self.settings = Settings(0, 1, [self.game_obj, self.game_obj2])
+        self.current_state = CurrentState(self.settings)
+        self.manager = GameManager(self.current_state)
 
     def test_add_to_blocked(self):
         game = GameObject.min_init("game1", 100)
@@ -27,33 +31,27 @@ class GameManagerTests(unittest.TestCase):
     def test_update_block(self):
         with patch("flask_app.TrackingThread.GameObject.has_time") as mock_time:
             mock_time.return_value = True
-            game_obj = GameObject.min_init("game1", 1)
-            game_obj2 = GameObject.min_init("game2", 1)
 
-            settings = Settings(0, 1, [game_obj, game_obj2])
-            current_state = CurrentState(settings)
-            current_state.currently_running = [game_obj, game_obj2]
+            self.current_state.currently_running = [self.game_obj, self.game_obj2]
 
-            self.manager.update_block(current_state)
+            self.manager.update_block()
             self.assertEqual([], self.manager.blocked_games)
 
             mock_time.return_value = False
-            self.manager.update_block(current_state)
-            self.assertEqual([game_obj, game_obj2], self.manager.blocked_games)
+            self.manager.update_block()
+            self.assertEqual([self.game_obj, self.game_obj2], self.manager.blocked_games)
 
     def test_enforce_block(self):
         with patch("flask_app.TrackingThread.GameObject.kill") as mock_kill:
             game_obj = GameObject.min_init("game1", 1)
             game_obj2 = GameObject.min_init("game2", 1)
 
-            settings = Settings(0, 1, [game_obj, game_obj2])
-            current_state = CurrentState(settings)
-            current_state.currently_running = [game_obj, game_obj2]
+            self.current_state.currently_running = [game_obj, game_obj2]
 
             self.manager.blocked_games = [game_obj]
-            self.manager.enforce_block(current_state)
+            self.manager.enforce_block()
 
-            self.assertEqual([game_obj2], current_state.currently_running)
+            self.assertEqual([game_obj2], self.current_state.currently_running)
 
 
 if __name__ == '__main__':
