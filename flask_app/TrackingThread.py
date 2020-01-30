@@ -82,7 +82,7 @@ class GameObject:
         self.end_time = int(time.time())
 
     def update(self, new_state):
-        if self == new_state:
+        if self.name == new_state.name:
             self.db_id = new_state.db_id
             self.end_time = new_state.end_time
             self.time_remaining = new_state.time_remaining
@@ -148,6 +148,9 @@ class DataManager:
     @classmethod
     def to_obj(cls, db_result):
         game_obj = GameObject.from_dict(db_result)
+        if db_result is None:
+            return None
+
         if game_obj.is_valid():
             return game_obj
         else:
@@ -278,7 +281,9 @@ class DataManager:
 
     @classmethod
     def id_of_obj(cls, game_obj):
-        return cls.get(start_time=game_obj.start_time).db_id
+        obj = cls.get(start_time=game_obj.start_time)
+        if obj is not None:
+            return obj.db_id
 
     @classmethod
     def update_game(cls, id, **values):

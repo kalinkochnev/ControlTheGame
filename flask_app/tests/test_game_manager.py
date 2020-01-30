@@ -33,7 +33,7 @@ class GameManagerTests(unittest.TestCase):
             mock_time.return_value = True
 
             self.current_state.currently_running = [self.game_obj, self.game_obj2]
-
+            self.manager.blocked_games = []
             self.manager.update_block()
             self.assertEqual([], self.manager.blocked_games)
 
