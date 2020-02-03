@@ -1,6 +1,9 @@
 import os
+from datetime import datetime
 
+import werkzeug
 from flask import Flask
+
 
 
 def create_app(test_config=None):
@@ -27,5 +30,12 @@ def create_app(test_config=None):
     # inits db
     from . import database as db
     db.init_app(app)
+
+    # a simple page that says hello
+    @app.route('/')
+    def hello():
+        dm = DataManager()
+
+        DataManager.currentDM()
 
     return app

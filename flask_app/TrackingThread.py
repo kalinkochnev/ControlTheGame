@@ -13,6 +13,7 @@ tracker_queue = queue.Queue()
 
 
 class Settings:
+    testing = False
 
     def __init__(self, max_extra_time, loop_time, game_objs):
         self.extra_time = max_extra_time
@@ -65,15 +66,19 @@ class GameObject:
         return time.time() < self.start_time + self.time_remaining
 
     def get_time_remaining(self):
+        if self.end_time == 0:
+            return self.time_remaining
+
         return self.time_remaining - (self.end_time - self.start_time)
 
     def kill(self):
         for pid in self.PIDS:
             try:
                 psutil.Process(pid).kill()
-                self.PIDS.pop(pid)
             except psutil.NoSuchProcess:
                 pass
+
+            self.PIDS.remove(pid)
 
     def start_now(self):
         self.start_time = int(time.time())
@@ -90,11 +95,31 @@ class GameObject:
 
     def is_valid(self):
         name = self.name is not None and type(self.name) is str
-        time_remaining = type(self.time_remaining) is int and self.time_remaining is not 0
-        start_time = type(self.start_time) is int
-        end_time = type(self.end_time) is int
+        time_remaining = type(self.time_remaining) is int or type(self.time_remaining) is float
+        start_time = type(self.start_time) is int or type(self.start_time) is float
+        end_time = type(self.end_time) is int or type(self.end_time) is float
 
         return name and time_remaining and start_time and end_time
+
+    # TODO add test
+    def current_save(self):
+        # TODO make database query for lowest value instead of all of them
+        if self.is_first_time():
+            game_inst = DataManager.get_day(datetime.today(), limit=None, name=self.name)
+
+            time_min = (pow(10, 10), None)
+            for g in game_inst:
+                if g.time_remaining < time_min[0]:
+                    time_min = (g.time_remaining, g)
+
+            return GameObject.min_init(self.name, time_min[0])
+
+    # TODO add test
+    def is_first_time(self):
+        game_inst = DataManager.get_day(datetime.today(), limit=None, name=self.name)
+        if len(game_inst) is 0 and game_inst is not None:
+            return True
+        return False
 
     def __eq__(self, other):
         if isinstance(other, GameObject):
@@ -112,21 +137,31 @@ class GameObject:
         return pids_equal and name_equal and is_running_equal and start_time_equal and end_time_equal and max_time_equal
 
     def __str__(self):
-        return f"{self.name} --- {self.PIDS}"
+        return f"{self.name} --- STATUS: {self.is_running} --- PIDS: {self.PIDS}"
 
 
 class DataManager:
 
     @classmethod
-    def get_db(cls):
+    def get_db_test(cls):
         db_loc = os.path.join(Settings.get_base_loc("ControlTheGame"), "flask_app/tests/test_resources/test_db.sqlite")
+        db = sqlite3.connect(db_loc, detect_types=sqlite3.PARSE_DECLTYPES)
+        db.row_factory = sqlite3.Row
+        return db
+
+    @classmethod
+    def get_db(cls):
+        db_loc = os.path.join(Settings.get_base_loc("ControlTheGame"), "flask_app/instance/flaskr.sqlite")
         db = sqlite3.connect(db_loc, detect_types=sqlite3.PARSE_DECLTYPES)
         db.row_factory = sqlite3.Row
         return db
 
     class GetData:
         def __init__(self, dm):
-            self.db = dm.get_db()
+            if Settings.testing:
+                self.db = dm.get_db_test()
+            else:
+                self.db = dm.get_db()
 
         def __enter__(self):
             return self.db
@@ -136,7 +171,10 @@ class DataManager:
 
     class StoreData:
         def __init__(self, dm):
-            self.db = dm.get_db()
+            if Settings.testing:
+                self.db = dm.get_db_test()
+            else:
+                self.db = dm.get_db()
 
         def __enter__(self):
             return self.db
@@ -154,7 +192,7 @@ class DataManager:
         if game_obj.is_valid():
             return game_obj
         else:
-            return None
+            raise Exception("The game obj was invalid!")
 
     @classmethod
     def chain_where(cls, params):
@@ -216,6 +254,8 @@ class DataManager:
             if isinstance(game_obj, GameObject):
                 if game_obj.is_valid():
                     rows += f"('{game_obj.name}', {game_obj.start_time}, {game_obj.end_time}, {game_obj.time_remaining}),"
+                else:
+                    raise Exception("The game object put in was not valid!")
         rows = rows[0:len(rows) - 1]
 
         if len(rows) == 0:
@@ -256,7 +296,7 @@ class DataManager:
 
         query = ""
         if len(query_params.keys()) != 0:
-            query = f"SELECT * FROM game_log WHERE start_time >= {epoch1} AND start_time <= {epoch2} AND {cls.chain_where(query_params)}"
+            query = f"SELECT * FROM game_log WHERE start_time >= {epoch1} AND end_time <= {epoch2} AND {cls.chain_where(query_params)}"
         else:
             query = f"SELECT * FROM game_log WHERE start_time >= {epoch1} AND start_time <= {epoch2}"
 
@@ -314,8 +354,9 @@ class DataManager:
         invalid_end_values = cls.get_many(limit=None, end_time=0)
         for game in invalid_end_values:
             # End time is start time + half of time remaining, which is more fair than no time
+
+            time_remaining = game.time_remaining - (game.time_remaining / 2)
             end_time = game.start_time + (game.time_remaining / 2)
-            time_remaining = game.time_remaining - (game.time_remaining/2)
             cls.update_game(game.id, end_time=end_time, time_remaining=time_remaining)
 
 
@@ -380,35 +421,37 @@ class CurrentState:
             new_state = tracker_queue.get()
             old_state = self.get_game_from_running(new_state)
 
-            if old_state is not None:
-                if self.has_any_diff(old_state, new_state) is False:
-                    if new_state.is_running is False:
-                        self.game_end(old_state)
-                    continue
+            if self.has_run_diff(old_state, new_state):
+                if old_state is None:
+                    if new_state.is_running:
+                        # Start tracking game if there is time remaining from previous save or there is no save
+                        last_save = new_state.current_save()
+                        if last_save is None or last_save.get_time_remaining() > 0:
+                            self.game_start(new_state)
+                            continue
+                else:
+                    # if the old state was running but the new one isn't, end it
+                    if old_state.is_running:
+                        self.game_end(new_state)
+                        continue
 
-                if self.has_run_diff(old_state, new_state):
-                    # print(f"Has a run state diff {old_state.is_running} and {new_state.is_running}")
+            if self.has_pid_diff(old_state, new_state) and old_state is not None:
+                old_state.update(new_state)
+                continue
 
-                    if old_state.is_running:  # if old status is running, new one isn't apply game end changes
-                        # print("Ending game")
-                        self.game_end(old_state)
-
-                if self.has_pid_diff(old_state, new_state):
-                    old_state.update(new_state)
-
-            else:
-                if len(new_state.PIDS) > 0:
-                    self.game_start(new_state)
         self.GM.run()
 
-    def has_any_diff(self, old, new):
-        return self.has_run_diff(old, new) or self.has_pid_diff(old, new)
 
-    def has_run_diff(self, old_state, new_state):
-        return old_state.is_running != new_state.is_running
+def has_any_diff(self, old, new):
+    return self.has_run_diff(old, new) or self.has_pid_diff(old, new)
 
-    def has_pid_diff(self, old_state, new_state):
-        return old_state.PIDS != new_state.PIDS
+
+def has_run_diff(self, old_state, new_state):
+    return old_state.is_running != new_state.is_running
+
+
+def has_pid_diff(self, old_state, new_state):
+    return old_state.PIDS != new_state.PIDS
 
 
 class Tracker(threading.Thread):
@@ -423,24 +466,16 @@ class Tracker(threading.Thread):
     # TODO add test for when data has null value for end time or time_left
     def load_day_data(self):
         DataManager.clean_invalid()
-
         for game in self.settings.tracking_games:
-            game_inst = DataManager.get_day(datetime.today(), limit=None, name=game.name)
+            if game.is_first_time():
+                self.current_state.append(game.current_save())
 
-            # TODO make database query for lowest value instead of all of them
-            if len(game_inst) is not 0:
-                time_min = (pow(10, 10), None)
-                for g in game_inst:
-                    if g.time_remaining < time_min[0]:
-                        time_min = (g.time_remaining, g)
-
-                new_game_obj = GameObject.min_init(game.name, time_min[0])
-                self.current_state.append(new_game_obj)
-            else:
-                self.current_state.append(game)
+        else:
+            self.current_state.append(game)
 
     def run(self):
         print("Starting tracking thread!\n")
+        self.load_day_data()
         while True:
             self.update_status()
             time.sleep(self.loop_time)
@@ -465,7 +500,6 @@ class Tracker(threading.Thread):
             # if num pids is 0, is not running
             if len(game.PIDS) == 0:
                 game.is_running = False
-                # print("%s is closed" % game.name)
             else:
                 game.is_running = True
 
@@ -516,25 +550,20 @@ class GameManager:
 
 def start_tracking():
     calculator = GameObject.min_init("Calculator", 5)
-    # chrome = GameObject.min_init("Chrome", 5)
-    discord = GameObject.min_init("Discord", 5)
+    discord = GameObject.min_init("Chrome", 5)
 
-    settings = Settings(1, 5, [calculator, discord])
+    settings = Settings(1, 1, [calculator, discord])
 
     tracker = Tracker(settings)
     current_state = CurrentState(settings)
-    manager = GameManager()
 
     print("Starting...")
-    tracker.start()
+    tracker.load_day_data()
     while True:
-        """print(current_state.currently_running)
-        now = datetime.now().strftime("%c")
-        print(f"------ {now} ------")"""
+        print(current_state.currently_running)
+        tracker.update_status()
         current_state.update_running()
-        manager.run(current_state)
         time.sleep(settings.loop_time)
-        # print("\n")
 
 
 if __name__ == '__main__':

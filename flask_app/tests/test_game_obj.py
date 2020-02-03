@@ -66,6 +66,17 @@ class GameObjectTests(unittest.TestCase):
 
         self.assertEqual([], game1.PIDS)
 
+    def test_kill_game_pop_invalid(self):
+        # test when pids do exist
+        pid_list = [1, 2, 3, 10, 4]
+        game1 = GameObject.min_init('game1', 100)
+
+        with patch("flask_app.TrackingThread.psutil.Process.kill") as mocked_kill:
+            mocked_kill.return_value = None
+            game1.kill()
+
+        self.assertEqual([], game1.PIDS)
+
     def test_kill_game_invalid_PID(self):
         # test when pids do exist
         pid_list = [1, 2, 3, 10, 4]
@@ -95,6 +106,7 @@ class GameObjectTests(unittest.TestCase):
             game_obj = GameObject("game", start_time, 0, 300)
             self.assertTrue(game_obj.has_time())
 
+    # FIXED & TESTED -- BUG 1: OBJ NOT VALID WITH FLOAT
     def test_is_valid(self):
         game = GameObject.min_init("game", 100)
         self.assertTrue(game.is_valid())
@@ -110,7 +122,9 @@ class GameObjectTests(unittest.TestCase):
         with self.subTest("time_remaining testing"):
             self.assertTrue(game.is_valid())
             game.time_remaining = 0
-            self.assertFalse(game.is_valid())
+            self.assertTrue(game.is_valid())
+            game.time_remaining = 1.5
+            self.assertTrue(game.is_valid())
             game.time_remaining = "yay"
             self.assertFalse(game.is_valid())
             game.time_remaining = None
@@ -121,6 +135,8 @@ class GameObjectTests(unittest.TestCase):
             self.assertTrue(game.is_valid())
             game.start_time = 0
             self.assertTrue(game.is_valid())
+            game.start_time = 1.5
+            self.assertTrue(game.is_valid())
             game.start_time = "yay"
             self.assertFalse(game.is_valid())
             game.start_time = None
@@ -130,6 +146,8 @@ class GameObjectTests(unittest.TestCase):
         with self.subTest("end_time testing"):
             self.assertTrue(game.is_valid())
             game.end_time = 0
+            self.assertTrue(game.is_valid())
+            game.end_time = 1.5
             self.assertTrue(game.is_valid())
             game.end_time = "yay"
             self.assertFalse(game.is_valid())

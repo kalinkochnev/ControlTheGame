@@ -18,7 +18,7 @@ class TestDataManager(unittest.TestCase):
         self.settings = Settings(5, 1, [self.game_obj1, self.game_obj2])
         self.settings.db_loc = self.db_loc
         self.data_m = DataManager()
-        self.db = self.data_m.get_db()
+        Settings.testing = True
 
     def tearDown(self) -> None:
         self.init_test_db()
@@ -33,15 +33,15 @@ class TestDataManager(unittest.TestCase):
             db_file.close()
 
         with open(sql_script_loc, "r") as script:
-            db = DataManager.get_db()
+            db = DataManager.get_db_test()
             db.executescript(script.read().strip())
 
     def test_db_creation(self):
         self.assertTrue(os.path.exists(self.db_loc))
 
     def test_store_game_obj(self):
-        conn = self.db.cursor()
-        game_obj = GameObject("test game", time.time(), time.time() + 1000, 2000)
+        start = 0
+        game_obj = GameObject("test game", start, start + 1000, 2000)
         self.data_m.store_new(game_obj)
         result = self.data_m.query("SELECT * FROM game_log WHERE name='test game' LIMIT 1;", single=True)
 
@@ -154,16 +154,16 @@ class TestDataManager(unittest.TestCase):
         self.assertEqual([game1, game4], day_results)
 
     def test_id_of_obj(self):
-        DataManager.store_new(self.game_obj1)
-        self.assertEqual(1, DataManager.id_of_obj(self.game_obj1))
+        self.data_m.store_new(self.game_obj1)
+        self.assertEqual(1, self.data_m.id_of_obj(self.game_obj1))
 
     def test_update_game(self):
         game = GameObject.min_init("game", 1)
-        DataManager.store_new(game)
-        db_id = DataManager.id_of_obj(game)
+        self.data_m.store_new(game)
+        db_id = self.data_m.id_of_obj(game)
 
-        DataManager.update_game(db_id, time_remaining=100, name="ay")
-        stored = DataManager.get(id=db_id)
+        self.data_m.update_game(db_id, time_remaining=100, name="ay")
+        stored = self.data_m.get(id=db_id)
         self.assertEqual(100, stored.time_remaining)
         self.assertEqual('ay', stored.name)
 
@@ -181,8 +181,8 @@ class TestDataManager(unittest.TestCase):
 
         # Data in db but not same day
         prev_day = datetime(2019, 10, 1)
-        old_log1 = GameObject("Overwatch", prev_day.timestamp(), prev_day.timestamp() + 10, 0)
-        old_log2 = GameObject("Counterstrike", prev_day.timestamp() + 1000, prev_day.timestamp() + 6573, 0)
+        old_log1 = GameObject("Overwatch", prev_day.timestamp(), prev_day.timestamp() + 10, 10)
+        old_log2 = GameObject("Counterstrike", prev_day.timestamp() + 1000, prev_day.timestamp() + 6573, 10)
         self.data_m.store_many(old_log1, old_log2)
         tracker.load_day_data()
         self.assertEqual([track1, track2], tracker.current_state)
@@ -200,12 +200,12 @@ class TestDataManager(unittest.TestCase):
         game1b = GameObject("Overwatch", base_time + 3000, base_time + 3000 + 200, 300)
         game2b = GameObject("Counterstrike", base_time + 5000, base_time + 5000 + 500, 10)
         game1c = GameObject("Overwatch", base_time + 7000, base_time + 7000 + 10, 1)
-        DataManager.store_many(game1, game2, game1b, game2b, game1c)
+        self.data_m.store_many(game1, game2, game1b, game2b, game1c)
 
         tracker.load_day_data()
         self.assertEqual([game1c, game2b], tracker.current_state)
-        self.assertEqual(5, DataManager.id_of_obj(game1c))
-        self.assertEqual(5, DataManager.id_of_obj(game1c))
+        self.assertEqual(5, self.data_m.id_of_obj(game1c))
+        self.assertEqual(5, self.data_m.id_of_obj(game1c))
         self.assertEqual(None, tracker.current_state[1].db_id)
         self.assertEqual(None, tracker.current_state[0].db_id)
         self.assertEqual(0, tracker.current_state[0].start_time)
@@ -218,10 +218,10 @@ class TestDataManager(unittest.TestCase):
     def test_clean_invalid(self):
         unfinished_game = GameObject('game', time.time(), 0, 100)
         unfinished_game2 = GameObject('game1', time.time() + 5, 0, 250)
-        DataManager.store_many(unfinished_game, unfinished_game2)
-        DataManager.clean_invalid()
+        self.data_m.store_many(unfinished_game, unfinished_game2)
+        self.data_m.clean_invalid()
 
-        games = DataManager.get_many()
+        games = self.data_m.get_many()
         self.assertEqual(50 + unfinished_game.start_time, games[0].end_time)
         self.assertEqual(125 + unfinished_game2.start_time, games[1].end_time)
 
@@ -230,7 +230,7 @@ class TestDataManager(unittest.TestCase):
         game1 = GameObject("game", time.time(), 0, 200)
         state.game_start(game1)
 
-        result = DataManager.get(name="game")
+        result = self.data_m.get(name="game")
         self.assertTrue(game1.deep_equal(result))
 
     def test_CurrentState_game_end_db(self):
@@ -239,7 +239,7 @@ class TestDataManager(unittest.TestCase):
         state.game_start(game1)
         state.game_end(game1)
 
-        result = DataManager.get(name="game")
+        result = self.data_m.get(name="game")
         self.assertTrue(game1.deep_equal(result))
         self.assertIsNot(0, game1.end_time)
 
