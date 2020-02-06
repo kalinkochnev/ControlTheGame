@@ -71,6 +71,8 @@ class GameObject:
             return self.time_remaining
         elif time_remain < 0:
             return 0
+        else:
+            return time_remain
 
     def kill(self):
         for pid in self.PIDS:
@@ -338,7 +340,7 @@ class DataManager:
 
     @classmethod
     def id_of_obj(cls, game_obj):
-        obj = cls.get(start_time=game_obj.start_time)
+        obj = cls.get(start_time=game_obj.start_time, name=game_obj.name)
         if obj is not None:
             return obj.db_id
 
@@ -434,18 +436,31 @@ class CurrentState:
         old_status.update(new_status)
 
     # TODO add test for when it is closed by the user and make sure it gets logged
+    # TODO mystery bug where chrome end time is not being saved because it thinks its blocked and kills it
     def update_running(self):
         while tracker_queue.empty() is False:
             new_state = tracker_queue.get()
             old_state = self.get_game_from_running(new_state)
 
+            time_left = new_state.time_left()
+            last_save = new_state.current_save()
+
+            # TODO make better version of past save checking
+            # TODO test last save loading into new state
+            if last_save is not None:
+                if last_save.time_remaining < time_left:
+                    time_left = last_save.time_remaining
+                    new_state.time_remaining = time_left
+
+                    if time_left == 0:
+                        new_state.is_running = False
+
             # TODO add test where it retrieves an old save if the new one is not out of time
             if old_state is None:
                 assert new_state is not None, "Something terrible has gone wrong, new state was somehow None"
-                time_left = new_state.time_left()
 
                 # TODO test is its blocked that it gets added to the running but not started
-                if self.GM.is_blocked(new_state):
+                if self.GM.is_blocked(new_state) and new_state.is_running:
                     self.add_to_running(new_state)
                     continue
 
@@ -453,9 +468,10 @@ class CurrentState:
                     self.game_start(new_state)
                     continue
 
+                """
                 if new_state.time_left() is not 0:
                     # Loads a saved version if not found
-                    old_state = new_state.current_save()
+                    old_state = new_state.current_save()"""
 
             if old_state is not None:
                 if old_state.is_running and new_state.is_running is False:
@@ -565,7 +581,6 @@ class GameManager:
         for game in self.status.currently_running:
             if game.name in self.blocked_names():
                 game.kill()
-                self.status.remove_from_running(game)
 
     # TODO add test
     def is_blocked(self, game):
@@ -573,11 +588,12 @@ class GameManager:
             return True
         return False
 
+
 def start_tracking():
     calculator = GameObject.min_init("Calculator", 5)
-    chrome = GameObject.min_init("Chrome", 10)
+    chrome = GameObject.min_init("Chrome", 5)
 
-    settings = Settings(1, 1, [chrome])
+    settings = Settings(1, 1, [chrome, calculator])
 
     tracker = Tracker(settings)
     current_state = CurrentState(settings)
