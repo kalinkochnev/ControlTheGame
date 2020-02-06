@@ -1,10 +1,11 @@
-import unittest
-from unittest.mock import patch
 import time
+import unittest
+from datetime import datetime
+from unittest.mock import patch
+
 import psutil
 
-
-from flask_app.TrackingThread import GameObject
+from flask_app.TrackingThread import GameObject, DataManager, Settings
 
 
 class GameObjectTests(unittest.TestCase):
@@ -164,6 +165,18 @@ class GameObjectTests(unittest.TestCase):
         from_dict = GameObject.from_dict(values)
         comparison = GameObject('game', 10, 100, 200)
         self.assertTrue(comparison.deep_equal(from_dict))
+
+    def test_is_first_time(self):
+        Settings.testing = True
+        date = datetime(2019, 11, 1).timestamp()
+        game1 = GameObject("game", date - 10, date, 1000)
+        DataManager.store_new(game1)
+        self.assertTrue(game1.is_first_time())
+
+        date = datetime.today().timestamp()
+        game1 = GameObject("game2", date - 10, date, 1000)
+        DataManager.store_new(game1)
+        self.assertFalse(game1.is_first_time())
 
 
 if __name__ == '__main__':

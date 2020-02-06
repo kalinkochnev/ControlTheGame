@@ -1,6 +1,6 @@
+import os
 import time
 import unittest
-import os
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
@@ -10,8 +10,9 @@ from flask_app.TrackingThread import GameObject, DataManager, Settings, Tracker,
 class TestDataManager(unittest.TestCase):
     def setUp(self) -> None:
         self.base_loc = Settings.get_base_loc("ControlTheGame")
-        self.db_loc = ""
-        self.init_test_db()
+        self.db_loc = os.path.join(self.base_loc, "flask_app/tests/test_resources/test_db.sqlite")
+
+        DataManager.init_test_db()
 
         self.game_obj1 = GameObject.min_init("game1", 1)
         self.game_obj2 = GameObject.min_init("game2", 1)
@@ -21,20 +22,7 @@ class TestDataManager(unittest.TestCase):
         Settings.testing = True
 
     def tearDown(self) -> None:
-        self.init_test_db()
-
-    # WARNING if sql execution script is moved, that's a big issue!
-    def init_test_db(self):
-        self.db_loc = os.path.join(self.base_loc, "flask_app/tests/test_resources/test_db.sqlite")
-        sql_script_loc = os.path.join(self.base_loc, "flask_app/flaskr/schema.sql")
-
-        if os.path.isfile(self.db_loc) is False:
-            db_file = open(self.db_loc, "w+")
-            db_file.close()
-
-        with open(sql_script_loc, "r") as script:
-            db = DataManager.get_db_test()
-            db.executescript(script.read().strip())
+        DataManager.init_test_db()
 
     def test_db_creation(self):
         self.assertTrue(os.path.exists(self.db_loc))
@@ -193,27 +181,28 @@ class TestDataManager(unittest.TestCase):
         track2 = GameObject("Counterstrike", 0, 0, 1000)
         settings = Settings(0, 1, [track1, track2])
         tracker = Tracker(settings)
+        other_day = datetime(2020, 11, 1).timestamp()
         base_time = datetime.today().timestamp()
 
-        game1 = GameObject("Overwatch", base_time, base_time + 500, 500)
-        game2 = GameObject("Counterstrike", base_time + 1000, base_time + 1000 + 500, 500)
-        game1b = GameObject("Overwatch", base_time + 3000, base_time + 3000 + 200, 300)
-        game2b = GameObject("Counterstrike", base_time + 5000, base_time + 5000 + 500, 10)
-        game1c = GameObject("Overwatch", base_time + 7000, base_time + 7000 + 10, 1)
-        self.data_m.store_many(game1, game2, game1b, game2b, game1c)
+        game1 = GameObject("Overwatch", other_day, other_day + 500, 500)
+        game2 = GameObject("Counterstrike", other_day, other_day + 1000, 500)
 
+        game1b = GameObject("Overwatch", base_time + 1, base_time + 100, 300)
+        game2b = GameObject("Counterstrike", base_time + 200, base_time + 300, 400)
+
+        self.data_m.store_many(game1, game2, game1b, game2b)
+
+        # TODO figure out what is causing wack behavior with retrieving saves
         tracker.load_day_data()
-        self.assertEqual([game1c, game2b], tracker.current_state)
-        self.assertEqual(5, self.data_m.id_of_obj(game1c))
-        self.assertEqual(5, self.data_m.id_of_obj(game1c))
-        self.assertEqual(None, tracker.current_state[1].db_id)
-        self.assertEqual(None, tracker.current_state[0].db_id)
-        self.assertEqual(0, tracker.current_state[0].start_time)
-        self.assertEqual(0, tracker.current_state[1].start_time)
-        self.assertEqual(0, tracker.current_state[0].end_time)
-        self.assertEqual(0, tracker.current_state[1].end_time)
-        self.assertEqual(1, tracker.current_state[0].time_remaining)
-        self.assertEqual(10, tracker.current_state[1].time_remaining)
+        self.assertEqual([game1b, game2b], tracker.current_state)
+        self.assertEqual(4, tracker.current_state[1].db_id)
+        self.assertEqual(3, tracker.current_state[0].db_id)
+        self.assertEqual(int(base_time + 1), tracker.current_state[0].start_time)
+        self.assertEqual(int(base_time + 200), tracker.current_state[1].start_time)
+        self.assertEqual(int(base_time + 100), tracker.current_state[0].end_time)
+        self.assertEqual(int(base_time + 300), tracker.current_state[1].end_time)
+        self.assertEqual(300, tracker.current_state[0].time_remaining)
+        self.assertEqual(400, tracker.current_state[1].time_remaining)
 
     def test_clean_invalid(self):
         unfinished_game = GameObject('game', time.time(), 0, 100)

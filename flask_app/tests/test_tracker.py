@@ -1,8 +1,7 @@
-import time
 import unittest
 from unittest.mock import patch
 
-from flask_app.TrackingThread import Settings, GameObject, Tracker, tracker_queue, DataManager
+from flask_app.TrackingThread import Settings, GameObject, Tracker, tracker_queue
 
 
 class TrackerTests(unittest.TestCase):
@@ -10,6 +9,7 @@ class TrackerTests(unittest.TestCase):
         self.game_obj1 = GameObject.min_init("game1", 1)
         self.game_obj2 = GameObject.min_init("game2", 1)
         self.settings = Settings(0, 1, [self.game_obj1, self.game_obj2])
+        Settings.testing = True
         self.tracker = Tracker(self.settings)
         self.tracker.load_day_data()
 
@@ -27,6 +27,8 @@ class TrackerTests(unittest.TestCase):
                 self.assertEqual([], game.PIDS)
 
     def test_get_current_state(self):
+        self.tracker.current_state = [self.game_obj1, self.game_obj2]
+        self.assertEqual([self.game_obj1, self.game_obj2], self.tracker.current_state)
         self.assertFalse(self.game_obj1.is_running)
         self.assertFalse(self.game_obj2.is_running)
 
@@ -57,15 +59,21 @@ class TrackerTests(unittest.TestCase):
                 self.assertEqual([1, 4], self.tracker.game_from_name("game1").PIDS)
 
     def test_add_to_q(self):
+        game = GameObject("game", 0, 100, 200)
+        game.is_running = True
+        game2 = GameObject("game2", 0, 100, 200)
+        game2.is_running = True
+
+        self.tracker.current_state = [game, game2]
         self.tracker.add_to_tracker_q()
 
         # Makes sure that they are not referenced to one another but same values
         item1 = tracker_queue.get()
         item2 = tracker_queue.get()
-        self.assertFalse(item1 is self.game_obj1)
-        self.assertFalse(item2 is self.game_obj2)
-        self.assertTrue(self.game_obj1.deep_equal(item1))
-        self.assertTrue(self.game_obj2.deep_equal(item2))
+        self.assertFalse(item1 is game)
+        self.assertFalse(item2 is game2)
+        self.assertTrue(game.deep_equal(item1))
+        self.assertTrue(game2.deep_equal(item2))
 
 
 if __name__ == '__main__':

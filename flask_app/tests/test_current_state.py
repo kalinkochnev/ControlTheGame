@@ -66,7 +66,7 @@ class CurrentStateTests(unittest.TestCase):
         self.state.update_running()
         self.assertEqual([], self.state.currently_running)
 
-    # The game already exists with pids but new is not running
+    # The game already exists but new is not running
     def test_update_already_exist(self):
         copy_game = copy.deepcopy(self.game_obj1)
         copy_game.is_running = False
@@ -98,32 +98,22 @@ class CurrentStateTests(unittest.TestCase):
         self.assertEqual([1, 2, 3, 4], self.game_obj1.PIDS)
 
     # The game isn't currently running but in the new status it is
-    def test_update_doesnt_exist(self):
+    def test_update_old_doesnt_exist(self):
         self.assertEqual([], self.state.currently_running)
 
-        self.game_obj1.is_running = True
-        self.game_obj1.PIDS = [1, 2, 3]
-        tracker_queue.put(self.game_obj1)
+        game = GameObject("game", 0, 100, 200)
+        game.is_running = True
+        game.PIDS = [1, 2, 3]
+
+        tracker_queue.put(game)
         # TODO PSUTIL being called
         with patch("flask_app.TrackingThread.GameManager.enforce_block") as mocked_kill:
-            mocked_kill.return_value = None
-            self.state.update_running()
-        self.assertEqual([self.game_obj1], self.state.currently_running)
+            with patch("flask_app.TrackingThread.GameObject.current_save") as mocked_save:
+                mocked_kill.return_value = None
+                mocked_save.return_value = None
+                self.state.update_running()
+        self.assertEqual([game], self.state.currently_running)
 
-    def test_has_pid_diff(self):
-        self.assertFalse(self.state.has_pid_diff(self.game_obj1, self.game_obj2))
-        self.game_obj1.PIDS = [1, 2, 3]
-        self.assertTrue(self.state.has_pid_diff(self.game_obj1, self.game_obj2))
-
-    def test_has_run_diff(self):
-        self.assertFalse(self.state.has_run_diff(self.game_obj1, self.game_obj2))
-        self.game_obj1.is_running = True
-        self.assertTrue(self.state.has_run_diff(self.game_obj1, self.game_obj2))
-
-    def test_has_any_diff(self):
-        self.assertFalse(self.state.has_any_diff(self.game_obj1, self.game_obj2))
-        self.game_obj1.is_running = True
-        self.assertTrue(self.state.has_any_diff(self.game_obj1, self.game_obj2))
 
 
 if __name__ == '__main__':

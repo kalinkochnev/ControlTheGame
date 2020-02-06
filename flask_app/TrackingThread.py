@@ -1,3 +1,4 @@
+import copy
 import os
 import queue
 import sqlite3
@@ -6,8 +7,6 @@ import time
 from datetime import datetime, timedelta
 
 import psutil
-import copy
-import time
 
 tracker_queue = queue.Queue()
 
@@ -63,13 +62,15 @@ class GameObject:
         return game_obj
 
     def has_time(self):
-        return time.time() < self.start_time + self.time_remaining
+        return time.time() < (self.start_time + self.time_remaining)
 
-    def get_time_remaining(self):
+    # TODO add test that checks that it returns 0 if time calculated is negative
+    def time_left(self):
+        time_remain = self.time_remaining - (self.end_time - self.start_time)
         if self.end_time == 0:
             return self.time_remaining
-
-        return self.time_remaining - (self.end_time - self.start_time)
+        elif time_remain < 0:
+            return 0
 
     def kill(self):
         for pid in self.PIDS:
@@ -104,7 +105,7 @@ class GameObject:
     # TODO add test
     def current_save(self):
         # TODO make database query for lowest value instead of all of them
-        if self.is_first_time():
+        if self.is_first_time() is False:
             game_inst = DataManager.get_day(datetime.today(), limit=None, name=self.name)
 
             time_min = (pow(10, 10), None)
@@ -112,12 +113,14 @@ class GameObject:
                 if g.time_remaining < time_min[0]:
                     time_min = (g.time_remaining, g)
 
-            return GameObject.min_init(self.name, time_min[0])
+            return time_min[1]
+        else:
+            return None
 
     # TODO add test
     def is_first_time(self):
         game_inst = DataManager.get_day(datetime.today(), limit=None, name=self.name)
-        if len(game_inst) is 0 and game_inst is not None:
+        if len(game_inst) is 0 or game_inst is None:
             return True
         return False
 
@@ -141,6 +144,20 @@ class GameObject:
 
 
 class DataManager:
+
+    @classmethod
+    def init_test_db(cls):
+        base_loc = Settings.get_base_loc("ControlTheGame")
+        db_loc = os.path.join(base_loc, "flask_app/tests/test_resources/test_db.sqlite")
+        sql_script_loc = os.path.join(base_loc, "flask_app/flaskr/schema.sql")
+
+        if os.path.isfile(db_loc) is False:
+            db_file = open(db_loc, "w+")
+            db_file.close()
+
+        with open(sql_script_loc, "r") as script:
+            db = DataManager.get_db_test()
+            db.executescript(script.read().strip())
 
     @classmethod
     def get_db_test(cls):
@@ -396,7 +413,7 @@ class CurrentState:
         self.currently_running[index].start_now()
 
         # store the change in the db
-        game.time_remaining = game.get_time_remaining()
+        game.time_remaining = game.time_left()
         DataManager.store_new(game)
         id = DataManager.id_of_obj(game)
         game.id = id
@@ -405,10 +422,10 @@ class CurrentState:
     def game_end(self, game):
         self.remove_from_running(game)
         game.end_now()
-        id = DataManager.id_of_obj(game)
+        db_id = DataManager.id_of_obj(game)
 
-        if id is not None:
-            DataManager.update_game(id, end_time=game.end_time, time_remaining=game.get_time_remaining())
+        if db_id is not None:
+            DataManager.update_game(db_id, end_time=game.end_time, time_remaining=game.time_left())
 
     def game_update(self, old_status, new_status):
         if old_status.name != new_status.name:
@@ -416,42 +433,38 @@ class CurrentState:
 
         old_status.update(new_status)
 
+    # TODO add test for when it is closed by the user and make sure it gets logged
     def update_running(self):
         while tracker_queue.empty() is False:
             new_state = tracker_queue.get()
             old_state = self.get_game_from_running(new_state)
 
-            if self.has_run_diff(old_state, new_state):
-                if old_state is None:
-                    if new_state.is_running:
-                        # Start tracking game if there is time remaining from previous save or there is no save
-                        last_save = new_state.current_save()
-                        if last_save is None or last_save.get_time_remaining() > 0:
-                            self.game_start(new_state)
-                            continue
-                else:
-                    # if the old state was running but the new one isn't, end it
-                    if old_state.is_running:
-                        self.game_end(new_state)
-                        continue
+            # TODO add test where it retrieves an old save if the new one is not out of time
+            if old_state is None:
+                assert new_state is not None, "Something terrible has gone wrong, new state was somehow None"
+                time_left = new_state.time_left()
 
-            if self.has_pid_diff(old_state, new_state) and old_state is not None:
-                old_state.update(new_state)
-                continue
+                # TODO test is its blocked that it gets added to the running but not started
+                if self.GM.is_blocked(new_state):
+                    self.add_to_running(new_state)
+                    continue
+
+                if time_left > 0 and new_state.is_running:
+                    self.game_start(new_state)
+                    continue
+
+                if new_state.time_left() is not 0:
+                    # Loads a saved version if not found
+                    old_state = new_state.current_save()
+
+            if old_state is not None:
+                if old_state.is_running and new_state.is_running is False:
+                    self.game_end(old_state)
+
+                elif old_state.PIDS != new_state.PIDS:
+                    old_state.update(new_state)
 
         self.GM.run()
-
-
-def has_any_diff(self, old, new):
-    return self.has_run_diff(old, new) or self.has_pid_diff(old, new)
-
-
-def has_run_diff(self, old_state, new_state):
-    return old_state.is_running != new_state.is_running
-
-
-def has_pid_diff(self, old_state, new_state):
-    return old_state.PIDS != new_state.PIDS
 
 
 class Tracker(threading.Thread):
@@ -468,10 +481,10 @@ class Tracker(threading.Thread):
         DataManager.clean_invalid()
         for game in self.settings.tracking_games:
             if game.is_first_time():
-                self.current_state.append(game.current_save())
+                self.current_state.append(game)
 
-        else:
-            self.current_state.append(game)
+            else:
+                self.current_state.append(game.current_save())
 
     def run(self):
         print("Starting tracking thread!\n")
@@ -525,6 +538,12 @@ class GameManager:
     def __init__(self, status):
         self.status = status
 
+    # TODO add test
+    def load_blocked_games(self):
+        blocked = DataManager.get_day(datetime.today(), limit=None, time_remaining=0)
+        for game in blocked:
+            self.block(game)
+
     def run(self):
         self.update_block()
         self.enforce_block()
@@ -541,24 +560,31 @@ class GameManager:
             if game.has_time() is False:
                 self.block(game)
 
+    # TODO test that the game is removed from the running
     def enforce_block(self):
         for game in self.status.currently_running:
             if game.name in self.blocked_names():
                 game.kill()
                 self.status.remove_from_running(game)
 
+    # TODO add test
+    def is_blocked(self, game):
+        if game.name in self.blocked_names():
+            return True
+        return False
 
 def start_tracking():
     calculator = GameObject.min_init("Calculator", 5)
-    discord = GameObject.min_init("Chrome", 5)
+    chrome = GameObject.min_init("Chrome", 10)
 
-    settings = Settings(1, 1, [calculator, discord])
+    settings = Settings(1, 1, [chrome])
 
     tracker = Tracker(settings)
     current_state = CurrentState(settings)
 
     print("Starting...")
     tracker.load_day_data()
+    current_state.GM.load_blocked_games()
     while True:
         print(current_state.currently_running)
         tracker.update_status()
