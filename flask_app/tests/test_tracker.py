@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from flask_app.TrackingThread import Settings, GameObject, Tracker, tracker_queue
+from flask_app.flaskr.TrackingThread import Settings, GameObject, Tracker, tracker_queue
 
 
 class TrackerTests(unittest.TestCase):

@@ -1,6 +1,6 @@
 import unittest
 
-from flask_app.TrackingThread import Settings, GameObject
+from flask_app.flaskr.TrackingThread import Settings, GameObject
 
 
 class SettingsTests(unittest.TestCase):

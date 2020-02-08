@@ -2,7 +2,7 @@ import copy
 import unittest
 from unittest.mock import patch
 
-from flask_app.TrackingThread import GameObject, Settings, CurrentState, tracker_queue
+from flask_app.flaskr.TrackingThread import GameObject, Settings, CurrentState, tracker_queue
 
 
 class CurrentStateTests(unittest.TestCase):

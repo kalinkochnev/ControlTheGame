@@ -4,7 +4,7 @@ import unittest
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
-from flask_app.TrackingThread import GameObject, DataManager, Settings, Tracker, CurrentState
+from flask_app.flaskr.TrackingThread import GameObject, DataManager, Settings, Tracker, CurrentState
 
 
 class TestDataManager(unittest.TestCase):

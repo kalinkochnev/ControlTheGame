@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from flask_app.TrackingThread import GameObject, GameManager, Tracker, CurrentState, Settings
+from flask_app.flaskr.TrackingThread import GameObject, GameManager, CurrentState, Settings
 
 
 class GameManagerTests(unittest.TestCase):

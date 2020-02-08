@@ -1,9 +1,8 @@
 import os
-from datetime import datetime
 
-import werkzeug
 from flask import Flask
 
+from .TrackingThread import DataManager
 
 
 def create_app(test_config=None):
@@ -34,8 +33,10 @@ def create_app(test_config=None):
     # a simple page that says hello
     @app.route('/')
     def hello():
-        dm = DataManager()
-
-        DataManager.currentDM()
+        curr_run = DataManager.get_running()
+        if curr_run is None:
+            return "No games running"
+        else:
+            return str([f"{game.name} | " for game in curr_run])
 
     return app

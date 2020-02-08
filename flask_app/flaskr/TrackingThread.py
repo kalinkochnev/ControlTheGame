@@ -147,6 +147,12 @@ class GameObject:
 
 class DataManager:
 
+    # TODO add test
+    @classmethod
+    def get_running(cls):
+        games = cls.get_day(datetime.today(), limit=None, end_time=0)
+        return games
+
     @classmethod
     def init_test_db(cls):
         base_loc = Settings.get_base_loc("ControlTheGame")
@@ -591,7 +597,7 @@ class GameManager:
 
 def start_tracking():
     calculator = GameObject.min_init("Calculator", 5)
-    chrome = GameObject.min_init("Chrome", 5)
+    chrome = GameObject.min_init("Chrome", 60)
 
     settings = Settings(1, 1, [chrome, calculator])
 

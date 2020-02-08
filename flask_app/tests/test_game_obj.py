@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import psutil
 
-from flask_app.TrackingThread import GameObject, DataManager, Settings
+from flask_app.flaskr.TrackingThread import GameObject, DataManager, Settings
 
 
 class GameObjectTests(unittest.TestCase):
